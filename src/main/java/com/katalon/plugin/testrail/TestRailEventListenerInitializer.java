@@ -103,8 +103,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     TestRailConnector connector = new TestRailConnector(
                             preferences.getString(TestRailConstants.PREF_TESTRAIL_URL, ""),
                             preferences.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""),
-                            preferences.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "")
-                    );
+                            preferences.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
                     String projectId = preferences.getString(TestRailConstants.PREF_TESTRAIL_PROJECT, "");
 
                     ProjectEntity project = ApplicationManager.getInstance().getProjectManager().getCurrentProject();

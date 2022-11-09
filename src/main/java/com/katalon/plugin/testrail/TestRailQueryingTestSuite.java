@@ -1,6 +1,8 @@
 package com.katalon.plugin.testrail;
 
 import com.katalon.platform.api.controller.FolderController;
+import com.katalon.platform.api.exception.CryptoException;
+import com.katalon.platform.api.exception.InvalidDataTypeFormatException;
 import com.katalon.platform.api.exception.ResourceException;
 import com.katalon.platform.api.extension.DynamicQueryingTestSuiteDescription;
 import com.katalon.platform.api.model.*;
@@ -28,11 +30,14 @@ public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescri
 
         String testRunId = TestRailHelper.parseId(s, "^R(\\d+)");
         PluginPreference preferences = getPluginStore();
-        TestRailConnector connector = new TestRailConnector(
-                preferences.getString(TestRailConstants.PREF_TESTRAIL_URL, ""),
-                preferences.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""),
-                preferences.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "")
-        );
+        TestRailConnector connector = null;
+        try {
+            connector = new TestRailConnector(preferences.getString(TestRailConstants.PREF_TESTRAIL_URL, ""),
+                    preferences.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""),
+                    preferences.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
+        } catch (Exception e) {
+            e.printStackTrace(System.out);
+        }
         List<TestCaseEntity> resultTestCases = new ArrayList<>();
         if (testRunId.equals("")) return resultTestCases;
 
