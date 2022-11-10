@@ -193,9 +193,9 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             
             pluginStore.setBoolean(TestRailConstants.PREF_TESTRAIL_ENABLED, chckEnableIntegration.getSelection());
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_USERNAME, txtUsername.getText());
-            pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PASSWORD, txtPassword.getText(), true);
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_URL, txtUrl.getText());
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PROJECT, txtProject.getText());
+            pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PASSWORD, txtPassword.getText(), true);
 
             pluginStore.save();
 
@@ -214,9 +214,9 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             chckEnableIntegration.notifyListeners(SWT.Selection, new Event());
 
             txtUsername.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""));
-            txtPassword.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
             txtUrl.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_URL, ""));
             txtProject.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PROJECT, ""));
+            txtPassword.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
 
             container.layout(true, true);
         } catch (Exception e) {
