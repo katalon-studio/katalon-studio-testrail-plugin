@@ -35,7 +35,7 @@ public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescri
             connector = new TestRailConnector(preferences.getString(TestRailConstants.PREF_TESTRAIL_URL, ""),
                     preferences.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""),
                     preferences.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
-        } catch (Exception e) {
+        } catch (InvalidDataTypeFormatException | CryptoException e) {
             e.printStackTrace(System.out);
         }
         List<TestCaseEntity> resultTestCases = new ArrayList<>();

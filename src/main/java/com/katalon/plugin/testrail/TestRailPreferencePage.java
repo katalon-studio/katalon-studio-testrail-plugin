@@ -195,12 +195,17 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_USERNAME, txtUsername.getText());
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_URL, txtUrl.getText());
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PROJECT, txtProject.getText());
-            pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PASSWORD, txtPassword.getText(), true);
+            try {
+                pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PASSWORD, txtPassword.getText(), true);
+            } catch (CryptoException e) {
+                //Cannot encrypt the password
+                e.printStackTrace();
+            }
 
             pluginStore.save();
 
             return super.performOk();
-        } catch (Exception e) {
+        } catch (ResourceException e) {
             MessageDialog.openWarning(getShell(), "Warning", "Unable to update TestRail Integration Settings.");
             return false;
         }
@@ -216,10 +221,15 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             txtUsername.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""));
             txtUrl.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_URL, ""));
             txtProject.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PROJECT, ""));
-            txtPassword.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
+            try {
+                txtPassword.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
+            } catch (InvalidDataTypeFormatException | CryptoException e) {
+                //Cannot decrypt the password
+                e.printStackTrace();
+            }
 
             container.layout(true, true);
-        } catch (Exception e) {
+        } catch (ResourceException e) {
             MessageDialog.openWarning(getShell(), "Warning", "Unable to update TestRail Integration Settings.");
         }
     }
