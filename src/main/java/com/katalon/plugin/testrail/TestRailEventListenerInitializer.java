@@ -1,19 +1,5 @@
 package com.katalon.plugin.testrail;
 
-import com.katalon.platform.api.controller.TestCaseController;
-import com.katalon.platform.api.model.Integration;
-import com.katalon.platform.api.model.ProjectEntity;
-import com.katalon.platform.api.model.TestCaseEntity;
-import com.katalon.platform.api.service.ApplicationManager;
-import org.json.simple.JSONObject;
-import org.osgi.service.event.Event;
-
-import com.katalon.platform.api.event.EventListener;
-import com.katalon.platform.api.event.ExecutionEvent;
-import com.katalon.platform.api.execution.TestSuiteExecutionContext;
-import com.katalon.platform.api.extension.EventListenerInitializer;
-import com.katalon.platform.api.preference.PluginPreference;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -21,6 +7,20 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import org.json.simple.JSONObject;
+import org.osgi.service.event.Event;
+
+import com.katalon.platform.api.controller.TestCaseController;
+import com.katalon.platform.api.event.EventListener;
+import com.katalon.platform.api.event.ExecutionEvent;
+import com.katalon.platform.api.execution.TestSuiteExecutionContext;
+import com.katalon.platform.api.extension.EventListenerInitializer;
+import com.katalon.platform.api.model.Integration;
+import com.katalon.platform.api.model.ProjectEntity;
+import com.katalon.platform.api.model.TestCaseEntity;
+import com.katalon.platform.api.preference.PluginPreference;
+import com.katalon.platform.api.service.ApplicationManager;
 
 public class TestRailEventListenerInitializer implements EventListenerInitializer, TestRailComponent {
     private Pattern updatePattern = Pattern.compile("^R(\\d+)");
@@ -99,7 +99,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                                     + "\nTotal errors: " + Integer.toString(testSuiteSummary.getTotalErrors())
                                     + "\nTotal skipped: " + Integer.toString(testSuiteSummary.getTotalSkipped()));
                     System.out.println("TestRail: Summary message has been successfully sent");
-
+                    TestRailHelper.doEncrytionMigrated(preferences);
                     TestRailConnector connector = new TestRailConnector(
                             preferences.getString(TestRailConstants.PREF_TESTRAIL_URL, ""),
                             preferences.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""),

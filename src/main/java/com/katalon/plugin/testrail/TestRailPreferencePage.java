@@ -198,10 +198,10 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             try {
                 pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PASSWORD, txtPassword.getText(), true);
             } catch (CryptoException e) {
-                //Cannot encrypt the password
+                // Cannot encrypt the password
                 e.printStackTrace();
             }
-
+            pluginStore.setBoolean(TestRailConstants.IS_ENCRYPTION_MIGRATED, true);
             pluginStore.save();
 
             return super.performOk();
@@ -214,7 +214,11 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
     private void initializeInput() {
         try {
             PluginPreference pluginStore = getPluginStore();
-
+            try {
+                TestRailHelper.doEncrytionMigrated(pluginStore);
+            } catch (CryptoException e) {
+                MessageDialog.openError(getShell(), "Error", e.getMessage());
+            }
             chckEnableIntegration.setSelection(pluginStore.getBoolean(TestRailConstants.PREF_TESTRAIL_ENABLED, false));
             chckEnableIntegration.notifyListeners(SWT.Selection, new Event());
 
@@ -224,7 +228,7 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             try {
                 txtPassword.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
             } catch (InvalidDataTypeFormatException | CryptoException e) {
-                //Cannot decrypt the password
+                // Cannot decrypt the password
                 e.printStackTrace();
             }
 

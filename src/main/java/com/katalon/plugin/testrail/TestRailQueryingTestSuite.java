@@ -1,17 +1,21 @@
 package com.katalon.plugin.testrail;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import com.katalon.platform.api.controller.FolderController;
 import com.katalon.platform.api.exception.CryptoException;
 import com.katalon.platform.api.exception.InvalidDataTypeFormatException;
 import com.katalon.platform.api.exception.ResourceException;
 import com.katalon.platform.api.extension.DynamicQueryingTestSuiteDescription;
-import com.katalon.platform.api.model.*;
+import com.katalon.platform.api.model.FolderEntity;
+import com.katalon.platform.api.model.Integration;
+import com.katalon.platform.api.model.ProjectEntity;
+import com.katalon.platform.api.model.TestCaseEntity;
+import com.katalon.platform.api.model.TestSuiteEntity;
 import com.katalon.platform.api.preference.PluginPreference;
 import com.katalon.platform.api.service.ApplicationManager;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 
 public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescription, TestRailComponent {
     private FolderController folderController = ApplicationManager.getInstance()
@@ -31,6 +35,11 @@ public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescri
         String testRunId = TestRailHelper.parseId(s, "^R(\\d+)");
         PluginPreference preferences = getPluginStore();
         TestRailConnector connector = null;
+        try {
+            TestRailHelper.doEncrytionMigrated(preferences);
+        } catch (CryptoException e) {
+            e.printStackTrace();
+        }
         try {
             connector = new TestRailConnector(preferences.getString(TestRailConstants.PREF_TESTRAIL_URL, ""),
                     preferences.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""),

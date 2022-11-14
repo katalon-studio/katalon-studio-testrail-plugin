@@ -18,4 +18,6 @@ public interface TestRailConstants {
     String INTEGRATION_ID = "com.katalon.plugin.testrail.TestRailIntegration";
 
     String INTEGRATION_TESTCASE_ID = "testRail.testcase.id";
+
+    String IS_ENCRYPTION_MIGRATED = "isEncryptionMigrated";
 }
