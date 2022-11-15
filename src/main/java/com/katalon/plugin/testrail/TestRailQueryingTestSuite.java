@@ -37,7 +37,7 @@ public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescri
         TestRailConnector connector = null;
         try {
             TestRailHelper.doEncrytionMigrated(preferences);
-        } catch (CryptoException e) {
+        } catch (CryptoException |ResourceException e) {
             e.printStackTrace();
         }
         try {

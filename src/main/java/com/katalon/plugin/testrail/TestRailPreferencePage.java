@@ -216,7 +216,7 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             PluginPreference pluginStore = getPluginStore();
             try {
                 TestRailHelper.doEncrytionMigrated(pluginStore);
-            } catch (CryptoException e) {
+            } catch (CryptoException | ResourceException e) {
                 MessageDialog.openError(getShell(), "Error", e.getMessage());
             }
             chckEnableIntegration.setSelection(pluginStore.getBoolean(TestRailConstants.PREF_TESTRAIL_ENABLED, false));
