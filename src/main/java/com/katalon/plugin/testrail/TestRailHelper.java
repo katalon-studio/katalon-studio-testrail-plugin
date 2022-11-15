@@ -23,7 +23,7 @@ public class TestRailHelper {
         }
     }
 
-    public static void doEncrytionMigrated(PluginPreference preferences) throws CryptoException, ResourceException {
+    public static void doEncryptionMigrated(PluginPreference preferences) throws CryptoException, ResourceException {
         // Detect that the password in the previous version is encrypted based on the property
         // "IS_ENCRYPTION_MIGRATED". Do encrypt password and reset value of "IS_ENCRYPTION_MIGRATED" if not encrypted.
         boolean isEncryptionMigrated = preferences.getBoolean(TestRailConstants.IS_ENCRYPTION_MIGRATED, false);

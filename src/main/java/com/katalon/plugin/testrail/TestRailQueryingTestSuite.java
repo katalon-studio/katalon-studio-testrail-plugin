@@ -36,7 +36,7 @@ public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescri
         PluginPreference preferences = getPluginStore();
         TestRailConnector connector = null;
         try {
-            TestRailHelper.doEncrytionMigrated(preferences);
+            TestRailHelper.doEncryptionMigrated(preferences);
         } catch (CryptoException |ResourceException e) {
             e.printStackTrace();
         }

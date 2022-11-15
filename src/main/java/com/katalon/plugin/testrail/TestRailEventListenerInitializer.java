@@ -99,7 +99,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                                     + "\nTotal errors: " + Integer.toString(testSuiteSummary.getTotalErrors())
                                     + "\nTotal skipped: " + Integer.toString(testSuiteSummary.getTotalSkipped()));
                     System.out.println("TestRail: Summary message has been successfully sent");
-                    TestRailHelper.doEncrytionMigrated(preferences);
+                    TestRailHelper.doEncryptionMigrated(preferences);
                     TestRailConnector connector = new TestRailConnector(
                             preferences.getString(TestRailConstants.PREF_TESTRAIL_URL, ""),
                             preferences.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""),

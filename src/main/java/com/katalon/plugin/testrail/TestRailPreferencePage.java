@@ -215,7 +215,7 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
         try {
             PluginPreference pluginStore = getPluginStore();
             try {
-                TestRailHelper.doEncrytionMigrated(pluginStore);
+                TestRailHelper.doEncryptionMigrated(pluginStore);
             } catch (CryptoException | ResourceException e) {
                 MessageDialog.openError(getShell(), "Error", e.getMessage());
             }
