@@ -19,5 +19,8 @@ public interface TestRailConstants {
 
     String INTEGRATION_TESTCASE_ID = "testRail.testcase.id";
 
-    String IS_ENCRYPTION_MIGRATED = "isEncryptionMigrated";
+    String IS_ENCRYPTION_MIGRATED = "testRail.isEncryptionMigrated";
+
+    // TestRailPreferencePage
+    String LBL_WARNING_PASSWORD = "* If you open this project in Katalon Studio version before 8.5.5, you might need to re-enter your TestRail password.";
 }

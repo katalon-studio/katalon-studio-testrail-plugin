@@ -2,6 +2,7 @@ package com.katalon.plugin.testrail;
 
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.preference.PreferencePage;
+import org.eclipse.jface.resource.FontDescriptor;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
@@ -51,6 +52,11 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
 
         chckEnableIntegration = new Button(container, SWT.CHECK);
         chckEnableIntegration.setText("Using TestRail");
+
+        Label warningLbl = new Label(container, SWT.NONE);
+        warningLbl.setText(TestRailConstants.LBL_WARNING_PASSWORD);
+        FontDescriptor fontDescriptor = FontDescriptor.createFrom(warningLbl.getFont());
+        warningLbl.setFont(fontDescriptor.setStyle(SWT.ITALIC).createFont(warningLbl.getDisplay()));
 
         grpAuthentication = new Group(container, SWT.NONE);
         grpAuthentication.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
