@@ -22,7 +22,7 @@ import com.katalon.platform.api.exception.ResourceException;
 import com.katalon.platform.api.preference.PluginPreference;
 import com.katalon.platform.api.service.ApplicationManager;
 import com.katalon.platform.api.ui.UISynchronizeService;
-import com.katalon.plugin.testrail.components.HelpComposite;
+import com.katalon.plugin.components.HelpComposite;
 
 public class TestRailPreferencePage extends PreferencePage implements TestRailComponent {
 

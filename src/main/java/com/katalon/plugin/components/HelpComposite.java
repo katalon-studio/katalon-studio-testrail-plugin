@@ -1,4 +1,4 @@
-package com.katalon.plugin.testrail.components;
+package com.katalon.plugin.components;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Color;
