@@ -164,13 +164,7 @@ public class APIClient {
         StatusLine statusLine = response.getStatusLine();
         int statusCode = statusLine.getStatusCode();
 
-        InputStream istream = null;
-        if (statusCode == HttpStatus.SC_OK) {
-            istream = response.getEntity().getContent();
-        } else {
-            String reason = statusLine.getReasonPhrase();
-            throw new APIException(MessageFormat.format("TestRail API return HTTP code {0} ({1})", statusCode, reason));
-        }
+        InputStream istream = response.getEntity().getContent();
 
         String textContent = "";
         if (istream != null) {
@@ -183,6 +177,11 @@ public class APIClient {
             }
 
             reader.close();
+        }
+
+        if (statusCode != HttpStatus.SC_OK) {
+            String reason = statusLine.getReasonPhrase();
+            throw new APIException(MessageFormat.format("TestRail API return HTTP code {0} ({1}). Error details: {2}", statusCode, reason, textContent));
         }
 
         Object result;
