@@ -37,6 +37,10 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
     private Text txtUrl;
 
     private Text txtProject;
+    /*
+	 * Author: Mohit Kumar
+	 */
+    private Text runID;
 
     private Composite container;
 
@@ -82,6 +86,12 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
 
         createLabel("Project");
         txtProject = createTextbox();
+        
+        /*
+    	 * Author: Mohit Kumar
+    	 */
+        createLabel("RunID (Optional)");
+        runID = createRunIdTextbox();
 
         btnTestConnection = new Button(grpAuthentication, SWT.PUSH);
         btnTestConnection.setText("Test Connection");
@@ -108,6 +118,17 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
     }
 
     private Text createTextbox() {
+        Text text = new Text(grpAuthentication, SWT.BORDER);
+        GridData gridData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        gridData.widthHint = 200;
+        text.setLayoutData(gridData);
+        return text;
+    }
+    
+    /*
+	 * Author: Mohit Kumar
+	 */
+    private Text createRunIdTextbox() {
         Text text = new Text(grpAuthentication, SWT.BORDER);
         GridData gridData = new GridData(SWT.FILL, SWT.CENTER, true, false);
         gridData.widthHint = 200;
@@ -205,6 +226,10 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             pluginStore.setBoolean(TestRailConstants.PREF_TESTRAIL_ENABLED, chckEnableIntegration.getSelection());
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_USERNAME, txtUsername.getText());
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_URL, txtUrl.getText());
+            /*
+        	 * Author: Mohit Kumar
+        	 */
+            pluginStore.setString(TestRailConstants.PREF_TESTRAIL_RUNID, runID.getText());
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PROJECT, txtProject.getText());
             try {
                 pluginStore.setString(TestRailConstants.PREF_TESTRAIL_PASSWORD, txtPassword.getText(), true);
@@ -236,6 +261,10 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             txtUsername.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, ""));
             txtUrl.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_URL, ""));
             txtProject.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PROJECT, ""));
+            /*
+        	 * Author: Mohit Kumar
+        	 */
+            runID.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_RUNID, ""));
             try {
                 txtPassword.setText(pluginStore.getString(TestRailConstants.PREF_TESTRAIL_PASSWORD, "", true));
             } catch (InvalidDataTypeFormatException | CryptoException e) {
