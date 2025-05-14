@@ -15,6 +15,8 @@ public interface TestRailConstants {
 
     String PREF_TESTRAIL_PROJECT = "testRail.project";
 
+    String PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS = "testRail.customFieldMappings";
+
     String INTEGRATION_ID = "com.katalon.plugin.testrail.TestRailIntegration";
 
     String INTEGRATION_TESTCASE_ID = "testRail.testcase.id";
