@@ -82,8 +82,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                 if (!isIntegrationEnabled) {
                     return;
                 }
-                String authToken = preferences.getString(TestRailConstants.PREF_TESTRAIL_USERNAME, "");
-
+                
                 if (ExecutionEvent.TEST_SUITE_FINISHED_EVENT.equals(event.getTopic())) {
                     ExecutionEvent eventObject = (ExecutionEvent) event.getProperty("org.eclipse.e4.data");
 
@@ -110,6 +109,20 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     TestCaseController controller = ApplicationManager.getInstance().getControllerManager().getController(TestCaseController.class);
 
                     List<Long> updateIds = new ArrayList<>();
+                    
+                    // Load custom field mappings
+                    PluginPreference pluginPreference = ApplicationManager.getInstance()
+                        .getPreferenceManager()
+                        .getPluginPreference(project.getId(), TestRailConstants.PLUGIN_ID);
+                    
+                    if (pluginPreference == null) {
+                        System.out.println("TestRail: Failed to get plugin preference. Cannot continue.");
+                        return;
+                    }
+
+                    String customFieldMappingsStr = pluginPreference.getString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS, "{}");
+                    Map<String, Object> customFieldMappings = TestRailHelper.convertStringToCustomFieldMappings(customFieldMappingsStr);
+
                     List<Map<String, String>> data = testSuiteContext.getTestCaseContexts().stream().map(testCaseExecutionContext -> {
                         String status = mapToTestRailStatus(testCaseExecutionContext.getTestCaseStatus());
                         try {
@@ -124,18 +137,32 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                             Map<String, String> resultMap = new HashMap<>();
                             resultMap.put("case_id", filteredTestCaseId);
                             resultMap.put("status_id", status);
+                            
+                            // Add custom fields to resultMap
+                            for (Map.Entry<String, Object> mapping : customFieldMappings.entrySet()) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> fieldMapping = (Map<String, Object>) mapping.getValue();
+                                String value = fieldMapping.get("value").toString();
+                                // Apply variable substitution if needed
+                                value = TestRailHelper.substituteVariables(value, testSuiteContext, testSuiteSummary);
+                                resultMap.put("custom_result_" + mapping.getKey(), value);
+                            }
+                            
                             return resultMap;
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
                         return null;
                     }).filter(map -> map != null).collect(Collectors.toList());
+
                     //Check if test case is in test run
                     //If not, add it to test run
                     String testRunId = getTestRun(testSuiteContext.getSourceId(), projectId, connector, updateIds);
                     if (testRunId.equals("")) {
+                        System.out.println("TestRail: Failed to extract testRunId from testSuite name. Please ensure testSuite name follow the correct convention (S<id> or R<id>)");
                         return;
                     }
+
                     List<Long> testCaseIdInRun = connector.getTestCaseIdInRun(testRunId);
                     if (!testCaseIdInRun.containsAll(updateIds)) {
                         testCaseIdInRun.addAll(updateIds);
@@ -146,6 +173,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     }
                     Map<String, Object> requestBody = new HashMap<>();
                     requestBody.put("results", data);
+
                     connector.addMultipleResultForCases(testRunId, requestBody);
                 }
             } catch (Exception e) {

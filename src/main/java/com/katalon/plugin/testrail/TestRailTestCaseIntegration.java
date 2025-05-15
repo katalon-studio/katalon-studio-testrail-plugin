@@ -5,8 +5,6 @@ import com.katalon.platform.api.model.Integration;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.commons.lang3.StringUtils;
-
 public class TestRailTestCaseIntegration implements Integration {
     private String testCaseId;
 

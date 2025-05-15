@@ -65,6 +65,10 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
     private ToolItem btnDeleteMapping;
     private ToolItem btnClearMappings;
 
+    private static final String PLACEHOLDER_NAME = "Sample Field";
+    private static final String PLACEHOLDER_TYPE = TestRailHelper.TYPE_STRING;
+    private static final String PLACEHOLDER_VALUE = "This is a sample value";
+
     @Override
     protected Control createContents(Composite composite) {
         container = new Composite(composite, SWT.NONE);
@@ -195,8 +199,18 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
         valueColumn.setText("Value");
         valueColumn.setWidth(200);
 
-        // Add 5 empty rows
-        for (int i = 0; i < 5; i++) {
+        // Add a placeholder row
+        TableItem placeholderItem = new TableItem(customFieldMappingsTable, SWT.NONE);
+        placeholderItem.setText(new String[] { 
+            PLACEHOLDER_NAME, 
+            PLACEHOLDER_TYPE, 
+            PLACEHOLDER_VALUE 
+        });
+        // Make the placeholder row visually distinct with gray text
+        placeholderItem.setForeground(new org.eclipse.swt.graphics.Color(Display.getCurrent(), 128, 128, 128));
+
+        // Add 4 empty rows
+        for (int i = 0; i < 4; i++) {
             TableItem item = new TableItem(customFieldMappingsTable, SWT.NONE);
             item.setText(new String[] { "", "", "" });
         }
@@ -330,12 +344,52 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             }
             pluginStore.setBoolean(TestRailConstants.IS_ENCRYPTION_MIGRATED, true);
 
-            // Save custom field mappings as Map
-            Map<String, Object> customFieldMappings = TestRailHelper.tableItemsToMap(customFieldMappingsTable.getItems());
-            pluginStore.setString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS, 
-                TestRailHelper.convertCustomFieldMappingsToString(customFieldMappings));
+            // Save custom field mappings as Map, excluding the placeholder row
+            TableItem[] items = customFieldMappingsTable.getItems();
+            Map<String, Object> customFieldMappings = new java.util.LinkedHashMap<>();
+            for (TableItem item : items) {
+                String name = item.getText(0);
+                // Skip the placeholder row
+                if (name.equals(PLACEHOLDER_NAME) && 
+                    item.getText(1).equals(PLACEHOLDER_TYPE) && 
+                    item.getText(2).equals(PLACEHOLDER_VALUE)) {
+                    continue;
+                }
+                // Skip empty rows
+                if (name.trim().isEmpty() && item.getText(1).trim().isEmpty() && item.getText(2).trim().isEmpty()) {
+                    continue;
+                }
+                customFieldMappings.put(name, TestRailHelper.createFieldMapping(item.getText(1), item.getText(2)));
+            }
+            
+            String mappingsJson = TestRailHelper.convertCustomFieldMappingsToString(customFieldMappings);
+            pluginStore.setString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS, mappingsJson);
             
             pluginStore.save();
+
+            // Reload the table with saved data
+            customFieldMappingsTable.removeAll();
+            if (!customFieldMappings.isEmpty()) {
+                TestRailHelper.mapToTableItems(customFieldMappingsTable, customFieldMappings);
+            }
+            
+            // Add placeholder row if table is empty
+            if (customFieldMappingsTable.getItemCount() == 0) {
+                TableItem placeholderItem = new TableItem(customFieldMappingsTable, SWT.NONE);
+                placeholderItem.setText(new String[] { 
+                    PLACEHOLDER_NAME, 
+                    PLACEHOLDER_TYPE, 
+                    PLACEHOLDER_VALUE 
+                });
+                placeholderItem.setForeground(new org.eclipse.swt.graphics.Color(Display.getCurrent(), 128, 128, 128));
+            }
+
+            // Add empty rows if needed
+            while (customFieldMappingsTable.getItemCount() < 5) {
+                TableItem item = new TableItem(customFieldMappingsTable, SWT.NONE);
+                item.setText(new String[] { "", "", "" });
+            }
+
             return super.performOk();
         } catch (ResourceException e) {
             MessageDialog.openWarning(getShell(), "Warning", "Unable to update TestRail Integration Settings.");
@@ -365,10 +419,29 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             }
 
             // Initialize custom field mappings from Map
-            String customFieldMappingsStr = pluginStore.getString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS, "");
-            if (!customFieldMappingsStr.isEmpty()) {
-                Map<String, Object> customFieldMappings = TestRailHelper.convertStringToCustomFieldMappings(customFieldMappingsStr);
+            customFieldMappingsTable.removeAll();
+            String customFieldMappingsStr = pluginStore.getString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS, "{}");
+            Map<String, Object> customFieldMappings = TestRailHelper.convertStringToCustomFieldMappings(customFieldMappingsStr);
+            
+            if (!customFieldMappings.isEmpty()) {
                 TestRailHelper.mapToTableItems(customFieldMappingsTable, customFieldMappings);
+            }
+
+            // Add placeholder row if table is empty
+            if (customFieldMappingsTable.getItemCount() == 0) {
+                TableItem placeholderItem = new TableItem(customFieldMappingsTable, SWT.NONE);
+                placeholderItem.setText(new String[] { 
+                    PLACEHOLDER_NAME, 
+                    PLACEHOLDER_TYPE, 
+                    PLACEHOLDER_VALUE 
+                });
+                placeholderItem.setForeground(new org.eclipse.swt.graphics.Color(Display.getCurrent(), 128, 128, 128));
+            }
+
+            // Add empty rows if needed
+            while (customFieldMappingsTable.getItemCount() < 5) {
+                TableItem item = new TableItem(customFieldMappingsTable, SWT.NONE);
+                item.setText(new String[] { "", "", "" });
             }
 
             container.layout(true, true);

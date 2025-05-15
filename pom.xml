@@ -21,7 +21,7 @@
         <dependency>
             <groupId>com.katalon</groupId>
             <artifactId>com.katalon.platform</artifactId>
-            <version>1.0.21</version>
+            <version>1.0.23</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/com.googlecode.json-simple/json-simple -->
         <dependency>
