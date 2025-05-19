@@ -9,12 +9,15 @@ public class TestSuiteStatusSummary {
 
     private int totalErrors;
 
+    private int totalIncomplete;    
+
     private int totalSkipped;
 
     private TestSuiteStatusSummary() {
         totalPasses = 0;
         totalFailures = 0;
         totalErrors = 0;
+        totalIncomplete = 0;
         totalSkipped = 0;
     }
 
@@ -34,8 +37,12 @@ public class TestSuiteStatusSummary {
         return totalSkipped;
     }
 
+    public int getTotalIncomplete() {
+        return totalIncomplete;
+    }
+
     public int getTotalTestCases() {
-        return totalPasses + totalFailures + totalErrors + totalSkipped;
+        return totalPasses + totalFailures + totalErrors + totalSkipped + totalIncomplete;
     }
 
     public static TestSuiteStatusSummary of(TestSuiteExecutionContext testSuiteContext) {
@@ -51,6 +58,9 @@ public class TestSuiteStatusSummary {
                     break;
                 case "ERROR":
                     summary.totalErrors++;
+                    break;
+                case "INCOMPLETE":
+                    summary.totalIncomplete++;
                     break;
                 default:
                     summary.totalSkipped++;
