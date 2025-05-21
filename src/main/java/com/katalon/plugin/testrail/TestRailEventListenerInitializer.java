@@ -50,7 +50,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                 JSONObject jsonObject = connector.addRun(projectId, suiteId, name, testCaseIds);
                 return ((Long) jsonObject.get("id")).toString();
             } catch (Exception e) {
-                e.printStackTrace();
+                e.printStackTrace(System.out);
             }
         }
         return "";
@@ -157,7 +157,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                             
                             return resultMap;
                         } catch (Exception e) {
-                            e.printStackTrace();
+                            e.printStackTrace(System.out);
                         }
                         return null;
                     }).filter(map -> map != null).collect(Collectors.toList());
@@ -166,7 +166,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     //If not, add it to test run
                     String testRunId = getTestRun(testSuiteContext.getSourceId(), projectId, connector, updateIds);
                     if (testRunId.equals("")) {
-                        System.out.println("TestRail: Failed to extract testRunId from testSuite name. Please ensure testSuite name follow the correct convention (S<id> or R<id>)");
+                        System.out.println("TestRail: Failed to get testRunId from testSuite name: " + testSuiteContext.getSourceId() + ". Please ensure testSuite name follow the correct convention (S<id> or R<id>)");
                         return;
                     }
 
@@ -189,31 +189,43 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
         });
     }
 
-    private static Object resolveFinalValue(String variableName, String type, TestSuiteExecutionContext testSuiteContext, TestSuiteStatusSummary testSuiteSummary) {
-        String stringValue = replaceVariable(variableName, testSuiteContext, testSuiteSummary);
-        
-        if (type == null || type.isEmpty()) {
-            return stringValue;
+    private static Object resolveFinalValue(String templateText, String type, TestSuiteExecutionContext testSuiteContext, TestSuiteStatusSummary testSuiteSummary) {
+        if (templateText == null || templateText.isEmpty()) {
+            return templateText;
         }
+
+        // Pattern to match ${variableName} in text
+        Pattern pattern = Pattern.compile("\\$\\{([^}]+)\\}");
+        Matcher matcher = pattern.matcher(templateText);
+        StringBuffer replacedText = new StringBuffer();
+
+        while (matcher.find()) {
+            String variableName = matcher.group(1);
+            String replacement = replaceVariable(variableName, testSuiteContext, testSuiteSummary);
+            // Escape any special characters in the replacement string
+            matcher.appendReplacement(replacedText, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(replacedText);
+        String finalText = replacedText.toString();
 
         // Cast to the "type" defined via TestRail's admin page.
         // Warning: user may input wrong type to KS, or the type defined in TestRail is
         // not aligned with KS's field type.
         if (type.equalsIgnoreCase("integer")) {
             try {
-                return Integer.parseInt(stringValue);
+                return Integer.parseInt(finalText);
             } catch (NumberFormatException e) {
                 System.out.println(
-                        "TestRail: Failed to parse variable '" + variableName + "' to integer: " + stringValue);
+                        "TestRail: Failed to parse templateText '" + templateText + "' to integer: " + finalText);
                 return 0;
             }
         }
 
         if (type.equalsIgnoreCase("boolean")) {
-            return Boolean.parseBoolean(stringValue);
+            return Boolean.parseBoolean(finalText);
         }
 
-        return stringValue;
+        return finalText;
     }
 
     private static String replaceVariable(String variableName, TestSuiteExecutionContext testSuiteContext,
@@ -253,7 +265,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                 return String.valueOf(testSuiteSummary.getTotalSkipped());
 
             default:
-                return variableName; // Return the variable name itself if not found
+                return "${" + variableName + "}"; // Return the variable name itself if not found
         }
     }
 }

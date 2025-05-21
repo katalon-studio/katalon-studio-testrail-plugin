@@ -274,7 +274,7 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             Map<String, Map<String, Object>> propertyMap = (Map<String, Map<String, Object>>) parser.parse(propertyMapString);            
             return new LinkedHashMap<String, Map<String, Object>>(propertyMap);
         } catch (Exception e) {
-            e.printStackTrace();
+            e.printStackTrace(System.out);
         }
 
         return new LinkedHashMap<String, Map<String, Object>>();
