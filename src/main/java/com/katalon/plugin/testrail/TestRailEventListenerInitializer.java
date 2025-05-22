@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
 import org.osgi.service.event.Event;
 
 import com.katalon.platform.api.controller.TestCaseController;
@@ -49,7 +50,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                 JSONObject jsonObject = connector.addRun(projectId, suiteId, name, testCaseIds);
                 return ((Long) jsonObject.get("id")).toString();
             } catch (Exception e) {
-                e.printStackTrace();
+                e.printStackTrace(System.out);
             }
         }
         return "";
@@ -110,7 +111,28 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     TestCaseController controller = ApplicationManager.getInstance().getControllerManager().getController(TestCaseController.class);
 
                     List<Long> updateIds = new ArrayList<>();
-                    List<Map<String, String>> data = testSuiteContext.getTestCaseContexts().stream().map(testCaseExecutionContext -> {
+                    
+                    // Load custom field mappings
+                    PluginPreference pluginPreference = ApplicationManager.getInstance()
+                        .getPreferenceManager()
+                        .getPluginPreference(project.getId(), TestRailConstants.PLUGIN_ID);
+                    
+                    if (pluginPreference == null) {
+                        System.out.println("TestRail: Failed to get plugin preference. Cannot continue.");
+                        return;
+                    }
+
+                    JSONParser parser = new JSONParser();
+                    Map<String, Map<String, Object>> propertyMap = new HashMap<>();
+                    try {
+                        String propertyMapString = pluginPreference.getString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS, "{}");
+                        propertyMap = (Map<String, Map<String, Object>>)parser.parse(propertyMapString);
+                    } catch (Exception e) {
+                        System.out.println("TestRail: Failed to parse custom fields mapping: " + e.getMessage());
+                    }                    
+                    final Map<String, Map<String, Object>> finalPropertyMap = propertyMap;
+
+                    List<Map<String, Object>> data = testSuiteContext.getTestCaseContexts().stream().map(testCaseExecutionContext -> {
                         String status = mapToTestRailStatus(testCaseExecutionContext.getTestCaseStatus());
                         try {
                             TestCaseEntity testCaseEntity = controller.getTestCase(project, testCaseExecutionContext.getId());
@@ -121,21 +143,33 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                             String testRailTCId = integration.getProperties().get(TestRailConstants.INTEGRATION_TESTCASE_ID);
                             String filteredTestCaseId = testRailTCId != null ? testRailTCId.replaceAll("\\D", "") : null;
                             updateIds.add(Long.parseLong(filteredTestCaseId));
-                            Map<String, String> resultMap = new HashMap<>();
+                            Map<String, Object> resultMap = new HashMap<>();
                             resultMap.put("case_id", filteredTestCaseId);
                             resultMap.put("status_id", status);
+                            
+                            // Add custom fields to resultMap
+                            for (Map.Entry<String, Map<String, Object>> mapping : finalPropertyMap.entrySet()) {
+                                String value = mapping.getValue().get("value").toString();
+                                String type = mapping.getValue().get("type").toString();
+                                Object finalValue = resolveFinalValue(value, type, testSuiteContext, testSuiteSummary);
+                                resultMap.put("custom_result_" + mapping.getKey(), finalValue);
+                            }
+                            
                             return resultMap;
                         } catch (Exception e) {
-                            e.printStackTrace();
+                            e.printStackTrace(System.out);
                         }
                         return null;
                     }).filter(map -> map != null).collect(Collectors.toList());
+
                     //Check if test case is in test run
                     //If not, add it to test run
                     String testRunId = getTestRun(testSuiteContext.getSourceId(), projectId, connector, updateIds);
                     if (testRunId.equals("")) {
+                        System.out.println("TestRail: Failed to get testRunId from testSuite name: " + testSuiteContext.getSourceId() + ". Please ensure testSuite name follow the correct convention (S<id> or R<id>)");
                         return;
                     }
+
                     List<Long> testCaseIdInRun = connector.getTestCaseIdInRun(testRunId);
                     if (!testCaseIdInRun.containsAll(updateIds)) {
                         testCaseIdInRun.addAll(updateIds);
@@ -146,11 +180,92 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     }
                     Map<String, Object> requestBody = new HashMap<>();
                     requestBody.put("results", data);
+
                     connector.addMultipleResultForCases(testRunId, requestBody);
                 }
             } catch (Exception e) {
                 e.printStackTrace(System.out);
             }
         });
+    }
+
+    private static Object resolveFinalValue(String templateText, String type, TestSuiteExecutionContext testSuiteContext, TestSuiteStatusSummary testSuiteSummary) {
+        if (templateText == null || templateText.isEmpty()) {
+            return templateText;
+        }
+
+        // Pattern to match ${variableName} in text
+        Pattern pattern = Pattern.compile("\\$\\{([^}]+)\\}");
+        Matcher matcher = pattern.matcher(templateText);
+        StringBuffer replacedText = new StringBuffer();
+
+        while (matcher.find()) {
+            String variableName = matcher.group(1);
+            String replacement = replaceVariable(variableName, testSuiteContext, testSuiteSummary);
+            // Escape any special characters in the replacement string
+            matcher.appendReplacement(replacedText, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(replacedText);
+        String finalText = replacedText.toString();
+
+        // Cast to the "type" defined via TestRail's admin page.
+        // Warning: user may input wrong type to KS, or the type defined in TestRail is
+        // not aligned with KS's field type.
+        if (type.equalsIgnoreCase("integer")) {
+            try {
+                return Integer.parseInt(finalText);
+            } catch (NumberFormatException e) {
+                System.out.println(
+                        "TestRail: Failed to parse templateText '" + templateText + "' to integer: " + finalText);
+                return 0;
+            }
+        }
+
+        if (type.equalsIgnoreCase("boolean")) {
+            return Boolean.parseBoolean(finalText);
+        }
+
+        return finalText;
+    }
+
+    private static String replaceVariable(String variableName, TestSuiteExecutionContext testSuiteContext,
+            TestSuiteStatusSummary testSuiteSummary) {
+        switch (variableName) {
+            // From TestSuiteExecutionContext
+            case "hostName":
+                return testSuiteContext.getHostName();
+            case "os":
+                return testSuiteContext.getOs();
+            case "browser":
+                return testSuiteContext.getBrowser();
+            case "deviceId":
+                return testSuiteContext.getDeviceId();
+            case "deviceName":
+                return testSuiteContext.getDeviceName();
+            case "suiteName":
+                return testSuiteContext.getSuiteName();
+            case "executionProfile":
+                return testSuiteContext.getExecutionProfile();
+
+            // From TestSuiteStatusSummary
+            case "totalTestCases":
+                return String.valueOf(testSuiteSummary.getTotalTestCases());
+            case "totalPasses":
+            case "totalPassed":
+                return String.valueOf(testSuiteSummary.getTotalPasses());
+            case "totalFailures":
+            case "totalFailed":
+                return String.valueOf(testSuiteSummary.getTotalFailures());
+            case "totalErrors":
+            case "totalError":
+                return String.valueOf(testSuiteSummary.getTotalErrors());
+            case "totalIncomplete":
+                return String.valueOf(testSuiteSummary.getTotalIncomplete());
+            case "totalSkipped":
+                return String.valueOf(testSuiteSummary.getTotalSkipped());
+
+            default:
+                return "${" + variableName + "}"; // Return the variable name itself if not found
+        }
     }
 }

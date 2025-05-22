@@ -15,7 +15,8 @@ import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
-
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
 import com.katalon.platform.api.exception.CryptoException;
 import com.katalon.platform.api.exception.InvalidDataTypeFormatException;
 import com.katalon.platform.api.exception.ResourceException;
@@ -23,6 +24,9 @@ import com.katalon.platform.api.preference.PluginPreference;
 import com.katalon.platform.api.service.ApplicationManager;
 import com.katalon.platform.api.ui.UISynchronizeService;
 import com.katalon.plugin.components.HelpComposite;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class TestRailPreferencePage extends PreferencePage implements TestRailComponent {
 
@@ -45,6 +49,8 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
     private Label lblConnectionStatus;
 
     private Thread thread;
+
+    private TestRailPropertyMapComposite propertyMapComposite;
 
     @Override
     protected Control createContents(Composite composite) {
@@ -100,6 +106,8 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
         lblConnectionStatus = new Label(grpAuthentication, SWT.WRAP);
         lblConnectionStatus.setText("");
         lblConnectionStatus.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, true, 1, 1));
+
+        propertyMapComposite = new TestRailPropertyMapComposite(container);
 
         handleControlModifyEventListeners();
         initializeInput();
@@ -176,7 +184,9 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
         chckEnableIntegration.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                recursiveSetEnabled(grpAuthentication, chckEnableIntegration.getSelection());
+                boolean enabled = chckEnableIntegration.getSelection();
+                recursiveSetEnabled(grpAuthentication, enabled);
+                recursiveSetEnabled(propertyMapComposite, enabled);
             }
         });
     }
@@ -213,6 +223,9 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
                 e.printStackTrace();
             }
             pluginStore.setBoolean(TestRailConstants.IS_ENCRYPTION_MIGRATED, true);
+
+            pluginStore.setString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS,
+                    JSONObject.toJSONString(propertyMapComposite.getPropertyMap()));
             pluginStore.save();
 
             return super.performOk();
@@ -222,6 +235,7 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
         }
     }
 
+    @SuppressWarnings("unchecked")
     private void initializeInput() {
         try {
             PluginPreference pluginStore = getPluginStore();
@@ -243,9 +257,26 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
                 e.printStackTrace();
             }
 
+            propertyMapComposite.setInput(loadPropertyMap(pluginStore));
+
             container.layout(true, true);
         } catch (ResourceException e) {
             MessageDialog.openWarning(getShell(), "Warning", "Unable to update TestRail Integration Settings.");
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Map<String, Object>> loadPropertyMap(PluginPreference pluginStore) {
+        JSONParser parser = new JSONParser();
+        try {
+            String propertyMapString = pluginStore.getString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS,
+                    "{}");
+            Map<String, Map<String, Object>> propertyMap = (Map<String, Map<String, Object>>) parser.parse(propertyMapString);            
+            return new LinkedHashMap<String, Map<String, Object>>(propertyMap);
+        } catch (Exception e) {
+            e.printStackTrace(System.out);
+        }
+
+        return new LinkedHashMap<String, Map<String, Object>>();
     }
 }
