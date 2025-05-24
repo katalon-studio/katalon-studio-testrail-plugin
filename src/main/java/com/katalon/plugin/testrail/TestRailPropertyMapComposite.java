@@ -59,15 +59,11 @@ public class TestRailPropertyMapComposite extends Composite {
                 .map(PropertyValueType::name)
                 .toArray(String[]::new);
         }
-
-        public static PropertyValueType fromValue(Object value) {
-            if (value instanceof Integer) {
-                return Integer;
-            }
-            if (value instanceof Boolean) {
-                return Boolean;
-            }
-            return String;
+        public static PropertyValueType fromString(String type) {
+            return Arrays.stream(PropertyValueType.values())
+                .filter(value -> value.name().equalsIgnoreCase(type))
+                .findFirst()
+                .orElse(String);
         }
 
         public Object getDefaultValue() {
@@ -211,7 +207,7 @@ public class TestRailPropertyMapComposite extends Composite {
         @Override
         protected Object getValue(Object element) {            
             Entry<String, Map<String, Object>> entry = (Entry<String, Map<String, Object>>) element;
-            PropertyValueType valueType = PropertyValueType.fromValue(entry.getValue().get("type"));
+            PropertyValueType valueType = PropertyValueType.fromString((String)entry.getValue().get("type"));
             int index = Arrays.asList(PropertyValueType.values()).indexOf(valueType);
             return index >= 0 ? index : 0;
         }
@@ -229,7 +225,7 @@ public class TestRailPropertyMapComposite extends Composite {
             }
 
             Entry<String, Map<String, Object>> entry = (Entry<String, Map<String, Object>>) element;
-            PropertyValueType valueType = PropertyValueType.fromValue(entry.getValue().get("type"));
+            PropertyValueType valueType = PropertyValueType.fromString((String)entry.getValue().get("type"));
             PropertyValueType newValueType = PropertyValueType
                     .valueOf(PropertyValueType.stringValues()[(Integer) newSelectedIndex]);
 
