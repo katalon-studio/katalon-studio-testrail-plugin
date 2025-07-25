@@ -1,8 +1,12 @@
 package com.katalon.plugin.testrail;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
+import org.apache.commons.lang3.StringUtils;
 
 import com.katalon.platform.api.controller.FolderController;
 import com.katalon.platform.api.exception.CryptoException;
@@ -18,6 +22,7 @@ import com.katalon.platform.api.preference.PluginPreference;
 import com.katalon.platform.api.service.ApplicationManager;
 
 public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescription, TestRailComponent {
+    private static final String TESTRAIL_TESTCASE_DELIMITER = ",";
     private FolderController folderController = ApplicationManager.getInstance()
             .getControllerManager()
             .getController(FolderController.class);
@@ -47,8 +52,9 @@ public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescri
         } catch (InvalidDataTypeFormatException | CryptoException e) {
             e.printStackTrace(System.out);
         }
-        List<TestCaseEntity> resultTestCases = new ArrayList<>();
-        if (testRunId.equals("")) return resultTestCases;
+
+        Set<TestCaseEntity> resultTestCases = new HashSet<>();
+        if (testRunId.equals("")) return new ArrayList<>(resultTestCases);
 
         try {
             List<Long> testCaseIdInRun = connector.getTestCaseIdInRun(testRunId);
@@ -59,11 +65,20 @@ public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescri
                 }
                 Map<String, String> props = integration.getProperties();
                 if (props.containsKey(TestRailConstants.INTEGRATION_TESTCASE_ID)) {
-                    String testCaseId = props.get(TestRailConstants.INTEGRATION_TESTCASE_ID);
-                    String filteredTestCaseId = testCaseId != null ? testCaseId.replaceAll("\\D", "") : null;
-                    if (testCaseIdInRun.contains(Long.parseLong(filteredTestCaseId))) {
-                        System.out.println("Found testCaseId " + filteredTestCaseId);
-                        resultTestCases.add(testCaseEntity);
+                    String testRailTestCaseId = props.get(TestRailConstants.INTEGRATION_TESTCASE_ID);
+
+                    if (StringUtils.isBlank(testRailTestCaseId)) {
+                        return;
+                    }
+
+                    String[] testCaseIds = testRailTestCaseId.split(TESTRAIL_TESTCASE_DELIMITER);
+
+                    for (String id : testCaseIds) {
+                        String filteredTestCaseId = id != null ? id.trim().replaceAll("\\D", "") : null;
+                        if (StringUtils.isNotBlank(filteredTestCaseId) && testCaseIdInRun.contains(Long.parseLong(filteredTestCaseId))) {
+                            System.out.println("Found testCaseId " + filteredTestCaseId);
+                            resultTestCases.add(testCaseEntity);
+                        }
                     }
                 }
             });
@@ -71,7 +86,7 @@ public class TestRailQueryingTestSuite implements DynamicQueryingTestSuiteDescri
             e.printStackTrace();
         }
 
-        return resultTestCases;
+        return new ArrayList<>(resultTestCases);
     }
 
     private List<TestCaseEntity> getAllTestCases(ProjectEntity project, FolderEntity parentFolder)

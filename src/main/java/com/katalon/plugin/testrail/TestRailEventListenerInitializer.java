@@ -8,6 +8,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.osgi.service.event.Event;
@@ -24,6 +25,7 @@ import com.katalon.platform.api.preference.PluginPreference;
 import com.katalon.platform.api.service.ApplicationManager;
 
 public class TestRailEventListenerInitializer implements EventListenerInitializer, TestRailComponent {
+    private static final String TESTRAIL_TESTCASE_DELIMITER = ",";
     private Pattern updatePattern = Pattern.compile("^R(\\d+)");
     private Pattern createPattern = Pattern.compile("^S(\\d+)");
 
@@ -132,35 +134,58 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     }                    
                     final Map<String, Map<String, Object>> finalPropertyMap = propertyMap;
 
-                    List<Map<String, Object>> data = testSuiteContext.getTestCaseContexts().stream().map(testCaseExecutionContext -> {
+                    List<Map<String, Object>> data = testSuiteContext.getTestCaseContexts().stream().flatMap(testCaseExecutionContext -> {
                         String status = mapToTestRailStatus(testCaseExecutionContext.getTestCaseStatus());
+                        
+                        List<Map<String, Object>> resultMaps = new ArrayList<>();
+
                         try {
                             TestCaseEntity testCaseEntity = controller.getTestCase(project, testCaseExecutionContext.getId());
                             Integration integration = testCaseEntity.getIntegration(TestRailConstants.INTEGRATION_ID);
                             if (integration == null) {
-                                return null;
-                            }
-                            String testRailTCId = integration.getProperties().get(TestRailConstants.INTEGRATION_TESTCASE_ID);
-                            String filteredTestCaseId = testRailTCId != null ? testRailTCId.replaceAll("\\D", "") : null;
-                            updateIds.add(Long.parseLong(filteredTestCaseId));
-                            Map<String, Object> resultMap = new HashMap<>();
-                            resultMap.put("case_id", filteredTestCaseId);
-                            resultMap.put("status_id", status);
-                            
-                            // Add custom fields to resultMap
-                            for (Map.Entry<String, Map<String, Object>> mapping : finalPropertyMap.entrySet()) {
-                                String value = mapping.getValue().get("value").toString();
-                                String type = mapping.getValue().get("type").toString();
-                                Object finalValue = resolveFinalValue(value, type, testSuiteContext, testSuiteSummary);
-                                resultMap.put("custom_result_" + mapping.getKey(), finalValue);
+                                return resultMaps.stream();
                             }
                             
-                            return resultMap;
+                            String testRailTestCaseId = integration.getProperties().get(TestRailConstants.INTEGRATION_TESTCASE_ID);
+
+                            if (StringUtils.isBlank(testRailTestCaseId)) {
+                                return resultMaps.stream();
+                            }
+                            
+                            String[] testRailTestCaseIds = testRailTestCaseId.split(TESTRAIL_TESTCASE_DELIMITER);
+
+                            for (String id : testRailTestCaseIds) {
+                                Long filteredTestCaseId = Long.parseLong(id.trim().replaceAll("\\D", ""));
+                                
+                                if (updateIds.contains(filteredTestCaseId)) {
+                                    continue;
+                                }
+                                updateIds.add(filteredTestCaseId);
+                                
+                                Map<String, Object> resultMap = new HashMap<>();
+                                resultMap.put("case_id", filteredTestCaseId);
+                                resultMap.put("status_id", status);
+
+                                // Add custom fields to resultMap
+                                for (Map.Entry<String, Map<String, Object>> mapping : finalPropertyMap.entrySet()) {
+                                    String value = mapping.getValue().get("value").toString();
+                                    String type = mapping.getValue().get("type").toString();
+                                    Object finalValue = resolveFinalValue(value, type, testSuiteContext, testSuiteSummary);
+                                    resultMap.put("custom_result_" + mapping.getKey(), finalValue);
+                                }
+
+                                resultMaps.add(resultMap);
+                            }
                         } catch (Exception e) {
                             e.printStackTrace(System.out);
                         }
-                        return null;
-                    }).filter(map -> map != null).collect(Collectors.toList());
+                        return resultMaps.stream();
+                    }).collect(Collectors.toList());
+
+                    if (data.isEmpty()) {
+                        System.out.println("TestRail: No test cases found to update in TestRail.");
+                        return;
+                    }
 
                     //Check if test case is in test run
                     //If not, add it to test run
