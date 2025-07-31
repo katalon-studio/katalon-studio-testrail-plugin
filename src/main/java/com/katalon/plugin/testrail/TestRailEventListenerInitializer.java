@@ -157,9 +157,6 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                             for (String id : testRailTestCaseIds) {
                                 Long filteredTestCaseId = Long.parseLong(id.trim().replaceAll("\\D", ""));
                                 
-                                if (updateIds.contains(filteredTestCaseId)) {
-                                    continue;
-                                }
                                 updateIds.add(filteredTestCaseId);
                                 
                                 Map<String, Object> resultMap = new HashMap<>();
