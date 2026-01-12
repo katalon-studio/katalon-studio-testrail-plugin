@@ -78,28 +78,15 @@ public class TestRailConnector {
     @SuppressWarnings("unchecked")
     public List<Long> getTestCaseIdInRun(String id)
             throws IOException, URISyntaxException, GeneralSecurityException, APIException {
-        String paginationNextURL = null;
-        String requestURL = "";
-        JSONArray jsonArray = new JSONArray();
-        do {
-            if (paginationNextURL != null) {
-                requestURL = shortenURL(paginationNextURL);
-            } else {
-                requestURL = "get_tests/" + id;
-            }           
-            JSONObject response = (JSONObject) sendGet(requestURL);
-            
-            JSONObject paginationLinks = (JSONObject) response.get("_links");
-            paginationNextURL = (String) paginationLinks.get("next");
-            jsonArray.addAll((JSONArray) response.get("tests"));
-        } while (paginationNextURL != null);
+        String initialUrl = "get_tests/" + id;
+        JSONArray jsonArray = getArrayData(initialUrl, "tests");
 
         List<Long> listId = new ArrayList<>();
-
         jsonArray.forEach((o) -> {
             JSONObject jsonObject = (JSONObject) o;
             listId.add((Long) jsonObject.get("case_id"));
         });
+
         return listId;
     }
 
@@ -147,7 +134,46 @@ public class TestRailConnector {
         String requestURL = String.format("add_run/%s", projectId);
         return (JSONObject) sendPost(requestURL, data);
     }
-    
+
+    @SuppressWarnings("unchecked")
+    public List<Long> getCasesInSuite(String projectId, String suiteId)
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
+        String initialUrl = String.format("get_cases/%s&suite_id=%s", projectId, suiteId);
+        JSONArray jsonArray = getArrayData(initialUrl, "cases");
+
+        List<Long> caseIds = new ArrayList<>();
+        jsonArray.forEach((o) -> {
+            JSONObject jsonObject = (JSONObject) o;
+            caseIds.add((Long) jsonObject.get("id"));
+        });
+
+        return caseIds;
+    }
+
+    @SuppressWarnings("unchecked")
+    private JSONArray getArrayData(String initialUrl, String responseKey)
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
+        String paginationNextURL = null;
+        String requestURL = "";
+        JSONArray jsonArray = new JSONArray();
+
+        do {
+            if (paginationNextURL != null) {
+                requestURL = shortenURL(paginationNextURL);
+            } else {
+                requestURL = initialUrl;
+            }
+
+            JSONObject response = (JSONObject) sendGet(requestURL);
+
+            JSONObject paginationLinks = (JSONObject) response.get("_links");
+            paginationNextURL = (String) paginationLinks.get("next");
+            jsonArray.addAll((JSONArray) response.get(responseKey));
+        } while (paginationNextURL != null);
+
+        return jsonArray;
+    }
+
     private String shortenURL(String url) {
         final String prefix = "/api/v2/";
         if (url.startsWith(prefix)) {
