@@ -118,6 +118,26 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     List<Long> updateIds = new ArrayList<>();
                     Map<Long, String> caseIdToPathMap = new HashMap<>();
 
+                    // Pre-collect format-invalid case IDs in a separate pass
+                    Map<String, String> invalidFormatIds = new HashMap<>();
+                    testSuiteContext.getTestCaseContexts().forEach(ctx -> {
+                        try {
+                            TestCaseEntity entity = controller.getTestCase(project, ctx.getId());
+                            Integration intg = entity.getIntegration(TestRailConstants.INTEGRATION_ID);
+                            if (intg == null) return;
+                            String ids = intg.getProperties().get(TestRailConstants.INTEGRATION_TESTCASE_ID);
+                            if (StringUtils.isBlank(ids)) return;
+                            for (String id : ids.split(TESTRAIL_TESTCASE_DELIMITER)) {
+                                String trimmed = id.trim();
+                                if (!isValidTestRailCaseId(trimmed)) {
+                                    invalidFormatIds.put(trimmed, ctx.getId());
+                                }
+                            }
+                        } catch (Exception e) {
+                            // skip
+                        }
+                    });
+
                     // Load custom field mappings
                     PluginPreference pluginPreference = ApplicationManager.getInstance()
                         .getPreferenceManager()
@@ -159,7 +179,11 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                             String[] testRailTestCaseIds = testRailTestCaseId.split(TESTRAIL_TESTCASE_DELIMITER);
 
                             for (String id : testRailTestCaseIds) {
-                                Long filteredTestCaseId = Long.parseLong(id.trim().replaceAll("\\D", ""));
+                                String trimmedId = id.trim();
+                                if (!isValidTestRailCaseId(trimmedId)) {
+                                    continue;
+                                }
+                                Long filteredTestCaseId = Long.parseLong(trimmedId.replaceAll("\\D", ""));
 
                                 updateIds.add(filteredTestCaseId);
                                 caseIdToPathMap.put(filteredTestCaseId, testCaseExecutionContext.getId());
@@ -201,8 +225,30 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     if (createMatcher.lookingAt()) {
                         suiteId = createMatcher.group(1);
                     } else if (updateMatcher.lookingAt()) {
-                        // For update pattern, get suite ID from the test run
-                        System.out.println("TestRail: Skipping case ID validation for existing test run.");
+                        String runId = updateMatcher.group(1);
+                        try {
+                            JSONObject run = connector.getRun(runId);
+                            Object sid = run.get("suite_id");
+                            Object pid = run.get("project_id");
+                            if (sid != null) {
+                                suiteId = sid.toString();
+                            }
+                            if (pid != null && !pid.toString().equals(projectId)) {
+                                ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
+                                log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID,
+                                    "TestRail Integration: Aborting upload. Configured TestRail Project ID ("
+                                        + projectId + ") does not match run R" + runId + "'s project ("
+                                        + pid + "). Update the Project ID in Project Settings → TestRail "
+                                        + "to match the run's project, or use a run that belongs to project "
+                                        + projectId + "."));
+                                return;
+                            }
+                        } catch (Exception e) {
+                            ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
+                            log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID,
+                                "TestRail: Failed to fetch run " + runId + " for case ID validation: "
+                                    + e.getMessage() + ". Continuing without validation.", e));
+                        }
                     }
 
                     if (suiteId != null) {
@@ -224,7 +270,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
 
                             // Log validation results
                             int validCases = updateIds.size();
-                            logValidationResults(totalCasesBeforeValidation, validCases, invalidIds, caseIdToPathMap);
+                            logValidationResults(totalCasesBeforeValidation, validCases, invalidIds, caseIdToPathMap, invalidFormatIds);
 
                             if (updateIds.isEmpty()) {
                                 return;
@@ -234,6 +280,9 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                             log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID,
                                 "TestRail: Failed to validate case IDs: " + e.getMessage() + ". Continuing without validation (this may cause errors if case IDs are invalid)", e));
                         }
+                    } else if (!invalidFormatIds.isEmpty()) {
+                        int totalCases = updateIds.size() + invalidFormatIds.size();
+                        logValidationResults(totalCases, updateIds.size(), new ArrayList<>(), caseIdToPathMap, invalidFormatIds);
                     }
 
                     //Check if test case is in test run
@@ -343,31 +392,40 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
         }
     }
 
+    private boolean isValidTestRailCaseId(String id) {
+        return id != null && id.matches("[Cc]?\\d+");
+    }
+
     private void logValidationResults(int totalCases, int validCases, List<Long> invalidIds,
-            Map<Long, String> caseIdToPathMap) {
+            Map<Long, String> caseIdToPathMap, Map<String, String> invalidFormatIds) {
 
         ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
+        int totalWithFormatInvalid = totalCases + invalidFormatIds.size();
+        boolean hasInvalidIds = !invalidIds.isEmpty() || !invalidFormatIds.isEmpty();
 
-        if (invalidIds.isEmpty()) {
+        if (!hasInvalidIds) {
             // All valid - log success
-            String message = "\u2713 TestRail Integration: " + validCases + " of " + totalCases + " results uploaded successfully";
+            String message = "\u2713 TestRail Integration: " + validCases + " of " + totalWithFormatInvalid + " results uploaded successfully";
             log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, message));
         } else if (validCases == 0) {
             // Edge case: All invalid
             StringBuilder message = new StringBuilder();
             message.append("\u26a0 TestRail Integration: No results uploaded\n");
-            message.append("All test cases have invalid TestRail case ID mappings (").append(totalCases).append(" cases):\n");
+            message.append("All test cases have invalid TestRail case ID mappings (").append(totalWithFormatInvalid).append(" cases):\n");
 
             for (Long invalidId : invalidIds) {
                 String testCasePath = caseIdToPathMap.getOrDefault(invalidId, "Unknown");
                 message.append("  \u2022 ").append(testCasePath).append(" \u2192 C").append(invalidId).append("\n");
+            }
+            for (Map.Entry<String, String> entry : invalidFormatIds.entrySet()) {
+                message.append("  \u2022 ").append(entry.getValue()).append(" \u2192 invalid case ID: ").append(entry.getKey()).append("\n");
             }
 
             message.append("\u2192 Action needed: Verify case IDs match your TestRail test suite");
             log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, message.toString()));
         } else {
             // Partial success
-            String successMessage = "\u2713 TestRail Integration: " + validCases + " of " + totalCases + " results uploaded successfully";
+            String successMessage = "\u2713 TestRail Integration: " + validCases + " of " + totalWithFormatInvalid + " results uploaded successfully";
             log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, successMessage));
 
             StringBuilder warning = new StringBuilder();
@@ -376,6 +434,9 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
             for (Long invalidId : invalidIds) {
                 String testCasePath = caseIdToPathMap.getOrDefault(invalidId, "Unknown");
                 warning.append("  \u2022 ").append(testCasePath).append(" \u2192 TestRail Case ID: C").append(invalidId).append("\n");
+            }
+            for (Map.Entry<String, String> entry : invalidFormatIds.entrySet()) {
+                warning.append("  \u2022 ").append(entry.getValue()).append(" \u2192 invalid case ID: ").append(entry.getKey()).append("\n");
             }
 
             warning.append("\u2192 Action needed: Verify these case IDs exist in the configured TestRail test suite");

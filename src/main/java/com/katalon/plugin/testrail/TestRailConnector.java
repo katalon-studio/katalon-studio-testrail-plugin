@@ -75,6 +75,11 @@ public class TestRailConnector {
         return (JSONObject) sendGet("get_project/" + projectId);
     }
 
+    public JSONObject getRun(String runId)
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
+        return (JSONObject) sendGet("get_run/" + runId);
+    }
+
     @SuppressWarnings("unchecked")
     public List<Long> getTestCaseIdInRun(String id)
             throws IOException, URISyntaxException, GeneralSecurityException, APIException {
