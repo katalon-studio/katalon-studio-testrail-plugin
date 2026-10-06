@@ -18,7 +18,7 @@ public class TestRailToolItemDescription implements ToolItemDescription {
 
     @Override
     public String iconUrl() {
-        return "platform:/plugin/" + TestRailConstants.PLUGIN_ID + "/icons/icon.png";
+        return "platform:/plugin/" + TestRailConstants.PLUGIN_ID + "/icons-v2/testrail.svg";
     }
 
     @Override
