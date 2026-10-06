@@ -2,8 +2,10 @@ package com.katalon.plugin.testrail;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -157,6 +159,8 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                         System.out.println("TestRail: Failed to parse custom fields mapping: " + e.getMessage());
                     }                    
                     final Map<String, Map<String, Object>> finalPropertyMap = propertyMap;
+                    final Map<String, String> customFieldKeys = resolveCustomFieldKeys(connector,
+                            finalPropertyMap.keySet());
 
                     List<Map<String, Object>> data = testSuiteContext.getTestCaseContexts().stream().flatMap(testCaseExecutionContext -> {
                         String status = mapToTestRailStatus(testCaseExecutionContext.getTestCaseStatus());
@@ -197,7 +201,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                                     String value = mapping.getValue().get("value").toString();
                                     String type = mapping.getValue().get("type").toString();
                                     Object finalValue = resolveFinalValue(value, type, testSuiteContext, testSuiteSummary);
-                                    resultMap.put("custom_result_" + mapping.getKey(), finalValue);
+                                    resultMap.put(customFieldKeys.get(mapping.getKey()), finalValue);
                                 }
 
                                 resultMaps.add(resultMap);
@@ -310,6 +314,59 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                 e.printStackTrace(System.out);
             }
         });
+    }
+
+    /*
+     * Result fields created by older TestRail versions have "custom_<name>" as system name instead of
+     * "custom_result_<name>", so each mapping key is resolved against the system names TestRail reports.
+     */
+    private static Map<String, String> resolveCustomFieldKeys(TestRailConnector connector, Set<String> mappingKeys) {
+        Map<String, String> customFieldKeys = new HashMap<>();
+        if (mappingKeys.isEmpty()) {
+            return customFieldKeys;
+        }
+
+        Map<String, String> systemNameByName = new HashMap<>();
+        Set<String> systemNames = new HashSet<>();
+        try {
+            for (Object field : connector.getResultFields()) {
+                JSONObject fieldObject = (JSONObject) field;
+                String systemName = (String) fieldObject.get("system_name");
+                if (StringUtils.isBlank(systemName)) {
+                    continue;
+                }
+                systemNames.add(systemName);
+                String name = (String) fieldObject.get("name");
+                if (StringUtils.isNotBlank(name)) {
+                    systemNameByName.put(name, systemName);
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("TestRail: Failed to get result fields, falling back to the custom_result_ prefix: "
+                    + e.getMessage());
+        }
+
+        for (String mappingKey : mappingKeys) {
+            customFieldKeys.put(mappingKey, resolveCustomFieldKey(mappingKey.trim(), systemNameByName, systemNames));
+        }
+        return customFieldKeys;
+    }
+
+    private static String resolveCustomFieldKey(String key, Map<String, String> systemNameByName,
+            Set<String> systemNames) {
+        if (systemNames.contains(key)) {
+            return key;
+        }
+        if (systemNameByName.containsKey(key)) {
+            return systemNameByName.get(key);
+        }
+        if (systemNames.contains("custom_result_" + key)) {
+            return "custom_result_" + key;
+        }
+        if (systemNames.contains("custom_" + key)) {
+            return "custom_" + key;
+        }
+        return key.startsWith("custom_") ? key : "custom_result_" + key;
     }
 
     private static Object resolveFinalValue(String templateText, String type, TestSuiteExecutionContext testSuiteContext, TestSuiteStatusSummary testSuiteSummary) {

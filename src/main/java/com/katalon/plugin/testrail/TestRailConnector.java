@@ -80,6 +80,11 @@ public class TestRailConnector {
         return (JSONObject) sendGet("get_run/" + runId);
     }
 
+    public JSONArray getResultFields()
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
+        return (JSONArray) sendGet("get_result_fields");
+    }
+
     @SuppressWarnings("unchecked")
     public List<Long> getTestCaseIdInRun(String id)
             throws IOException, URISyntaxException, GeneralSecurityException, APIException {
