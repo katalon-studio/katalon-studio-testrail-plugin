@@ -1,8 +1,10 @@
 package com.katalon.plugin.testrail;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,10 +16,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
+import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.osgi.service.event.Event;
 
+import com.gurock.testrail.APIException;
 import com.katalon.platform.api.controller.TestCaseController;
 import com.katalon.platform.api.event.EventListener;
 import com.katalon.platform.api.event.ExecutionEvent;
@@ -31,6 +35,8 @@ import com.katalon.platform.api.service.ApplicationManager;
 
 public class TestRailEventListenerInitializer implements EventListenerInitializer, TestRailComponent {
     private static final String TESTRAIL_TESTCASE_DELIMITER = ",";
+    private static final int PER_CASE_VALIDATION_LIMIT = 50;
+    private static final int BULK_VALIDATION_LIMIT = 500;
     private Pattern updatePattern = Pattern.compile("^R(\\d+)");
     private Pattern createPattern = Pattern.compile("^S(\\d+)");
 
@@ -40,8 +46,10 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
      * @param id: Test Suite id in Katalon Studio
      * @param connector
      * @return
+     * @throws APIException when TestRail rejects the new run, so the caller can drop invalid case IDs and retry
      */
-    private String getTestRun(String id, String projectId, TestRailConnector connector, List<Long> testCaseIds) {
+    private String getTestRun(String id, String projectId, TestRailConnector connector, List<Long> testCaseIds)
+            throws Exception {
         String[] splitText = id.split("/");
         String name = splitText[splitText.length - 1];
 
@@ -52,13 +60,9 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
             return updateMatcher.group(1);
         } else if (createMatcher.lookingAt()) {
             String suiteId = createMatcher.group(1);
-            try {
-                System.out.println("Create new test run " + name);
-                JSONObject jsonObject = connector.addRun(projectId, suiteId, name, testCaseIds);
-                return ((Long) jsonObject.get("id")).toString();
-            } catch (Exception e) {
-                e.printStackTrace(System.out);
-            }
+            System.out.println("Create new test run " + name);
+            JSONObject jsonObject = connector.addRun(projectId, suiteId, name, testCaseIds);
+            return ((Long) jsonObject.get("id")).toString();
         }
         return "";
     }
@@ -214,6 +218,9 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
 
                     if (data.isEmpty()) {
                         System.out.println("TestRail: No test cases found to update in TestRail.");
+                        if (!invalidFormatIds.isEmpty()) {
+                            logValidationResults(0, 0, new ArrayList<>(), caseIdToPathMap, invalidFormatIds);
+                        }
                         return;
                     }
 
@@ -226,6 +233,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     Matcher updateMatcher = updatePattern.matcher(name);
 
                     String suiteId = null;
+                    Boolean runIncludesAllCases = null;
                     if (createMatcher.lookingAt()) {
                         suiteId = createMatcher.group(1);
                     } else if (updateMatcher.lookingAt()) {
@@ -234,86 +242,210 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                             JSONObject run = connector.getRun(runId);
                             Object sid = run.get("suite_id");
                             Object pid = run.get("project_id");
+                            Object includeAll = run.get("include_all");
+                            if (includeAll instanceof Boolean) {
+                                runIncludesAllCases = (Boolean) includeAll;
+                            }
                             if (sid != null) {
                                 suiteId = sid.toString();
                             }
                             if (pid != null && !pid.toString().equals(projectId)) {
-                                ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
-                                log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID,
-                                    "TestRail Integration: Aborting upload. Configured TestRail Project ID ("
+                                logError("TestRail Integration: Aborting upload. Configured TestRail Project ID ("
                                         + projectId + ") does not match run R" + runId + "'s project ("
                                         + pid + "). Update the Project ID in Project Settings → TestRail "
                                         + "to match the run's project, or use a run that belongs to project "
-                                        + projectId + "."));
+                                        + projectId + ".", null);
                                 return;
                             }
                         } catch (Exception e) {
-                            ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
-                            log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID,
-                                "TestRail: Failed to fetch run " + runId + " for case ID validation: "
-                                    + e.getMessage() + ". Continuing without validation.", e));
+                            logError("TestRail: Failed to fetch run " + runId + " for case ID validation: "
+                                    + e.getMessage() + ". Continuing without validation.", e);
                         }
                     }
 
+                    int totalCasesBeforeValidation = updateIds.size();
+                    List<Long> invalidIds = new ArrayList<>();
+                    // Case IDs not confirmed valid, re-checked only if TestRail rejects the upload
+                    Set<Long> unverifiedIds = new LinkedHashSet<>(updateIds);
                     if (suiteId != null) {
                         try {
-                            List<Long> validCaseIds = connector.getCasesInSuite(projectId, suiteId);
-                            int totalCasesBeforeValidation = updateIds.size();
-
-                            List<Long> invalidIds = updateIds.stream()
-                                .filter(id -> !validCaseIds.contains(id))
-                                .collect(Collectors.toList());
-
-                            updateIds.removeAll(invalidIds);
-                            
-                            // Remove invalid IDs from data (results)
-                            data.removeIf(resultMap -> {
-                                Long caseId = (Long) resultMap.get("case_id");
-                                return invalidIds.contains(caseId);
-                            });
-
-                            // Log validation results
-                            int validCases = updateIds.size();
-                            logValidationResults(totalCasesBeforeValidation, validCases, invalidIds, caseIdToPathMap, invalidFormatIds);
-
-                            if (updateIds.isEmpty()) {
-                                return;
-                            }
+                            CaseValidation validation = validateCaseIds(connector, projectId, suiteId, updateIds);
+                            invalidIds.addAll(validation.invalidIds);
+                            unverifiedIds.retainAll(validation.unverifiedIds);
                         } catch (Exception e) {
-                            ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
-                            log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID,
-                                "TestRail: Failed to validate case IDs: " + e.getMessage() + ". Continuing without validation (this may cause errors if case IDs are invalid)", e));
+                            logError("TestRail: Failed to validate case IDs: " + e.getMessage()
+                                    + ". Uploading anyway, and invalid case IDs will be removed if TestRail rejects the upload.", e);
                         }
-                    } else if (!invalidFormatIds.isEmpty()) {
-                        int totalCases = updateIds.size() + invalidFormatIds.size();
-                        logValidationResults(totalCases, updateIds.size(), new ArrayList<>(), caseIdToPathMap, invalidFormatIds);
+                        removeCaseIds(invalidIds, updateIds, data);
                     }
 
-                    //Check if test case is in test run
-                    //If not, add it to test run
-                    String testRunId = getTestRun(testSuiteContext.getSourceId(), projectId, connector, updateIds);
-                    if (testRunId.equals("")) {
-                        System.out.println("TestRail: Failed to get testRunId from testSuite name: " + testSuiteContext.getSourceId() + ". Please ensure testSuite name follow the correct convention (S<id> or R<id>)");
+                    if (updateIds.isEmpty()) {
+                        logValidationResults(totalCasesBeforeValidation, 0, invalidIds, caseIdToPathMap, invalidFormatIds);
                         return;
                     }
 
-                    List<Long> testCaseIdInRun = connector.getTestCaseIdInRun(testRunId);
-                    if (!testCaseIdInRun.containsAll(updateIds)) {
-                        testCaseIdInRun.addAll(updateIds);
-                        Map<String, Object> body = new HashMap<>();
-                        body.put("include_all", false);
-                        body.put("case_ids", testCaseIdInRun);
-                        connector.updateRun(testRunId, body);
-                    }
-                    Map<String, Object> requestBody = new HashMap<>();
-                    requestBody.put("results", data);
+                    String testRunId = "";
+                    boolean retriedAfterRejection = false;
+                    while (true) {
+                        try {
+                            //Check if test case is in test run
+                            //If not, add it to test run
+                            if (testRunId.isEmpty()) {
+                                testRunId = getTestRun(testSuiteContext.getSourceId(), projectId, connector, updateIds);
+                                if (testRunId.isEmpty()) {
+                                    logError("TestRail: Failed to get testRunId from testSuite name: " + testSuiteContext.getSourceId() + ". Please ensure testSuite name follow the correct convention (S<id> or R<id>)", null);
+                                    return;
+                                }
+                            }
 
-                    connector.addMultipleResultForCases(testRunId, requestBody);
+                            if (!Boolean.TRUE.equals(runIncludesAllCases)) {
+                                List<Long> testCaseIdInRun = connector.getTestCaseIdInRun(testRunId);
+                                if (!testCaseIdInRun.containsAll(updateIds)) {
+                                    testCaseIdInRun.addAll(updateIds);
+                                    Map<String, Object> body = new HashMap<>();
+                                    body.put("include_all", false);
+                                    body.put("case_ids", testCaseIdInRun);
+                                    connector.updateRun(testRunId, body);
+                                }
+                            }
+                            Map<String, Object> requestBody = new HashMap<>();
+                            requestBody.put("results", data);
+
+                            connector.addMultipleResultForCases(testRunId, requestBody);
+                            break;
+                        } catch (APIException e) {
+                            // TestRail rejects the whole request when one case ID is invalid, without saying which one
+                            if (retriedAfterRejection || e.getStatusCode() != 400 || unverifiedIds.isEmpty()) {
+                                throw e;
+                            }
+                            retriedAfterRejection = true;
+                            System.out.println("TestRail: Upload rejected, re-checking " + unverifiedIds.size()
+                                    + " unvalidated case ID(s). " + e.getMessage());
+                            CaseValidation recheck = validateCasesIndividually(connector, unverifiedIds, suiteId, true);
+                            if (recheck.invalidIds.isEmpty()) {
+                                throw e;
+                            }
+                            invalidIds.addAll(recheck.invalidIds);
+                            unverifiedIds.clear();
+                            removeCaseIds(recheck.invalidIds, updateIds, data);
+                            if (updateIds.isEmpty()) {
+                                logValidationResults(totalCasesBeforeValidation, 0, invalidIds, caseIdToPathMap, invalidFormatIds);
+                                return;
+                            }
+                        }
+                    }
+                    logValidationResults(totalCasesBeforeValidation, updateIds.size(), invalidIds, caseIdToPathMap, invalidFormatIds);
                 }
             } catch (Exception e) {
                 e.printStackTrace(System.out);
+                if (ExecutionEvent.TEST_SUITE_FINISHED_EVENT.equals(event.getTopic())) {
+                    logError("TestRail Integration: Failed to upload results to TestRail. " + e.getMessage(), e);
+                }
             }
         });
+    }
+
+    private static final class CaseValidation {
+        private final List<Long> invalidIds = new ArrayList<>();
+
+        private final List<Long> unverifiedIds = new ArrayList<>();
+    }
+
+    /*
+     * Checks small batches with one get_case call per ID, so a large suite is never downloaded just to
+     * validate a few IDs. Falls back to the suite's case list only when that is cheaper.
+     */
+    private CaseValidation validateCaseIds(TestRailConnector connector, String projectId, String suiteId,
+            List<Long> caseIds) throws Exception {
+        Set<Long> uniqueIds = new LinkedHashSet<>(caseIds);
+        boolean validatePerCase = uniqueIds.size() <= PER_CASE_VALIDATION_LIMIT;
+        Set<Long> suiteCaseIds = null;
+        if (!validatePerCase) {
+            Object firstPage = connector.getCasesInSuiteFirstPage(projectId, suiteId);
+            JSONArray firstPageCases = firstPage instanceof JSONArray ? (JSONArray) firstPage
+                    : (JSONArray) ((JSONObject) firstPage).get("cases");
+            JSONObject paginationLinks = firstPage instanceof JSONObject
+                    ? (JSONObject) ((JSONObject) firstPage).get("_links") : null;
+            boolean suiteFitsInOnePage = paginationLinks == null || paginationLinks.get("next") == null;
+            if (suiteFitsInOnePage) {
+                suiteCaseIds = new HashSet<>();
+                for (Object testRailCase : firstPageCases) {
+                    suiteCaseIds.add((Long) ((JSONObject) testRailCase).get("id"));
+                }
+            } else if (uniqueIds.size() <= BULK_VALIDATION_LIMIT) {
+                validatePerCase = true;
+            } else {
+                suiteCaseIds = new HashSet<>(connector.getCasesInSuite(projectId, suiteId));
+            }
+        }
+
+        if (validatePerCase) {
+            return validateCasesIndividually(connector, uniqueIds, suiteId, false);
+        }
+        CaseValidation validation = new CaseValidation();
+        for (Long caseId : uniqueIds) {
+            if (!suiteCaseIds.contains(caseId)) {
+                validation.invalidIds.add(caseId);
+            }
+        }
+        return validation;
+    }
+
+    /*
+     * @param dropUnreadable true once TestRail has rejected the upload. An ID that still cannot be read
+     * (e.g. HTTP 403 for a case in another project) is then treated as invalid instead of kept.
+     */
+    private CaseValidation validateCasesIndividually(TestRailConnector connector, Collection<Long> caseIds,
+            String suiteId, boolean dropUnreadable) {
+        CaseValidation validation = new CaseValidation();
+        String firstError = null;
+        for (Long caseId : caseIds) {
+            try {
+                JSONObject testRailCase = connector.getCase(caseId);
+                Object caseSuiteId = testRailCase.get("suite_id");
+                boolean inSuite = suiteId == null || (caseSuiteId != null && caseSuiteId.toString().equals(suiteId));
+                if (!inSuite || isDeleted(testRailCase.get("is_deleted"))) {
+                    validation.invalidIds.add(caseId);
+                }
+            } catch (Exception e) {
+                int statusCode = e instanceof APIException ? ((APIException) e).getStatusCode() : 0;
+                // TestRail answers 400 for a case ID that does not exist
+                boolean notFound = statusCode == 400 || statusCode == 404;
+                if (notFound || (dropUnreadable && statusCode > 0)) {
+                    validation.invalidIds.add(caseId);
+                } else {
+                    validation.unverifiedIds.add(caseId);
+                    if (firstError == null) {
+                        firstError = e.getMessage();
+                    }
+                }
+            }
+        }
+        if (!validation.unverifiedIds.isEmpty()) {
+            logError("TestRail: Could not verify " + validation.unverifiedIds.size() + " case ID(s) "
+                    + validation.unverifiedIds + ". " + firstError
+                    + " They will be uploaded and removed only if TestRail rejects them.", null);
+        }
+        return validation;
+    }
+
+    private static boolean isDeleted(Object isDeleted) {
+        if (isDeleted == null) {
+            return false;
+        }
+        String value = isDeleted.toString();
+        return !value.equals("0") && !value.equalsIgnoreCase("false");
+    }
+
+    private static void removeCaseIds(List<Long> idsToRemove, List<Long> updateIds, List<Map<String, Object>> data) {
+        Set<Long> removed = new HashSet<>(idsToRemove);
+        updateIds.removeIf(removed::contains);
+        data.removeIf(resultMap -> removed.contains((Long) resultMap.get("case_id")));
+    }
+
+    private static void logError(String message, Throwable e) {
+        ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
+        log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, message, e));
     }
 
     /*

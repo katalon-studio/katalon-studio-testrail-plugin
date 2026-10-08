@@ -13,8 +13,21 @@ package com.gurock.testrail;
  
 public class APIException extends Exception
 {
+	private int statusCode;
+
 	public APIException(String message)
 	{
 		super(message);
+	}
+
+	public APIException(String message, int statusCode)
+	{
+		super(message);
+		this.statusCode = statusCode;
+	}
+
+	public int getStatusCode()
+	{
+		return statusCode;
 	}
 }

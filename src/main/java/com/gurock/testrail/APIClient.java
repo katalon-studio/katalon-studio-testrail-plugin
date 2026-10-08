@@ -23,6 +23,7 @@ import java.text.MessageFormat;
 import java.util.Base64;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.Header;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.StatusLine;
@@ -31,6 +32,7 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.methods.RequestBuilder;
 import org.apache.http.entity.ByteArrayEntity;
+import org.apache.http.util.EntityUtils;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 
@@ -38,6 +40,14 @@ import com.katalon.platform.api.controller.RequestController;
 import com.katalon.platform.api.service.ApplicationManager;
 
 public class APIClient {
+    private static final int HTTP_TOO_MANY_REQUESTS = 429;
+
+    private static final int MAX_RATE_LIMIT_RETRIES = 3;
+
+    private static final int DEFAULT_RETRY_AFTER_SECONDS = 5;
+
+    private static final int MAX_RETRY_AFTER_SECONDS = 60;
+
     private String m_user;
 
     private String m_password;
@@ -148,18 +158,20 @@ public class APIClient {
             requestBuilder.setEntity(entity);
         }
 
-        HttpUriRequest request = requestBuilder.build();
-
-        request.setHeader("Content-Type", "application/json");
-
-        String basicAuth = getAuthorization(this.m_user, this.m_password);
-        request.setHeader("Authorization", "Basic " + basicAuth);
-
         RequestController requestController = ApplicationManager.getInstance()
                 .getControllerManager()
                 .getController(RequestController.class);
 
-        HttpResponse response = requestController.sendWithProxy(request);
+        HttpResponse response = requestController.sendWithProxy(buildRequest(requestBuilder));
+        // TestRail Cloud rate-limits API calls, so wait as told by Retry-After instead of failing the whole upload
+        for (int retry = 0; retry < MAX_RATE_LIMIT_RETRIES
+                && response.getStatusLine().getStatusCode() == HTTP_TOO_MANY_REQUESTS; retry++) {
+            EntityUtils.consumeQuietly(response.getEntity());
+            if (!waitForRetry(response)) {
+                break;
+            }
+            response = requestController.sendWithProxy(buildRequest(requestBuilder));
+        }
 
         StatusLine statusLine = response.getStatusLine();
         int statusCode = statusLine.getStatusCode();
@@ -181,7 +193,7 @@ public class APIClient {
 
         if (statusCode != HttpStatus.SC_OK) {
             String reason = statusLine.getReasonPhrase();
-            throw new APIException(MessageFormat.format("TestRail API return HTTP code {0} ({1}). Error details: {2}", statusCode, reason, textContent));
+            throw new APIException(MessageFormat.format("TestRail API return HTTP code {0} ({1}). Error details: {2}", statusCode, reason, textContent), statusCode);
         }
 
         Object result;
@@ -208,6 +220,36 @@ public class APIClient {
         }
 
         return result;
+    }
+
+    private HttpUriRequest buildRequest(RequestBuilder requestBuilder) {
+        HttpUriRequest request = requestBuilder.build();
+
+        request.setHeader("Content-Type", "application/json");
+
+        String basicAuth = getAuthorization(this.m_user, this.m_password);
+        request.setHeader("Authorization", "Basic " + basicAuth);
+        return request;
+    }
+
+    private static boolean waitForRetry(HttpResponse response) {
+        int seconds = DEFAULT_RETRY_AFTER_SECONDS;
+        Header retryAfter = response.getFirstHeader("Retry-After");
+        if (retryAfter != null) {
+            try {
+                seconds = Math.max(1, Math.min(MAX_RETRY_AFTER_SECONDS, Integer.parseInt(retryAfter.getValue().trim())));
+            } catch (NumberFormatException e) {
+                // keep the default wait
+            }
+        }
+        System.out.println("TestRail: Rate limited by TestRail, retrying in " + seconds + "s");
+        try {
+            Thread.sleep(seconds * 1000L);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private static String getAuthorization(String user, String password) {
