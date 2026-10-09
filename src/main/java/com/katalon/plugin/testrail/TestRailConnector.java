@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
@@ -15,6 +16,9 @@ import com.gurock.testrail.APIClient;
 import com.gurock.testrail.APIException;
 
 public class TestRailConnector {
+    // get_cases and get_tests pages can be megabytes, and printing them whole slows the upload down
+    private static final int MAX_LOGGED_RESPONSE_LENGTH = 2000;
+
     private String url;
     private String username;
     private String password;
@@ -66,7 +70,7 @@ public class TestRailConnector {
     private Object sendGet(String url) throws IOException, URISyntaxException, GeneralSecurityException, APIException {
         System.out.println("Send get url " + url);
         Object response = this.apiClient.sendGet(url);
-        System.out.println("Receive: " + response.toString());
+        System.out.println("Receive: " + StringUtils.abbreviate(response.toString(), MAX_LOGGED_RESPONSE_LENGTH));
         return response;
     }
 
@@ -145,6 +149,19 @@ public class TestRailConnector {
         return (JSONObject) sendPost(requestURL, data);
     }
 
+    public JSONObject getCase(Long caseId)
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
+        return (JSONObject) sendGet("get_case/" + caseId);
+    }
+
+    /**
+     * Returns a paginated JSONObject on TestRail 6.7+, or a plain JSONArray of all cases on older servers.
+     */
+    public Object getCasesInSuiteFirstPage(String projectId, String suiteId)
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
+        return sendGet(String.format("get_cases/%s&suite_id=%s", projectId, suiteId));
+    }
+
     @SuppressWarnings("unchecked")
     public List<Long> getCasesInSuite(String projectId, String suiteId)
             throws IOException, URISyntaxException, GeneralSecurityException, APIException {
@@ -174,10 +191,16 @@ public class TestRailConnector {
                 requestURL = initialUrl;
             }
 
-            JSONObject response = (JSONObject) sendGet(requestURL);
+            Object rawResponse = sendGet(requestURL);
+            if (rawResponse instanceof JSONArray) {
+                // TestRail before 6.7 returns the whole list without pagination
+                jsonArray.addAll((JSONArray) rawResponse);
+                break;
+            }
+            JSONObject response = (JSONObject) rawResponse;
 
             JSONObject paginationLinks = (JSONObject) response.get("_links");
-            paginationNextURL = (String) paginationLinks.get("next");
+            paginationNextURL = paginationLinks != null ? (String) paginationLinks.get("next") : null;
             jsonArray.addAll((JSONArray) response.get(responseKey));
         } while (paginationNextURL != null);
 
