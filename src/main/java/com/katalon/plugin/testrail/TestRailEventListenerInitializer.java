@@ -211,7 +211,8 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                                 resultMaps.add(resultMap);
                             }
                         } catch (Exception e) {
-                            e.printStackTrace(System.out);
+                            logError("TestRail: Failed to prepare the TestRail result of " + testCaseExecutionContext.getId()
+                                    + ". Its result may not be uploaded.", e);
                         }
                         return resultMaps.stream();
                     }).collect(Collectors.toList());
@@ -337,9 +338,11 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     logValidationResults(totalCasesBeforeValidation, updateIds.size(), invalidIds, caseIdToPathMap, invalidFormatIds);
                 }
             } catch (Exception e) {
-                e.printStackTrace(System.out);
                 if (ExecutionEvent.TEST_SUITE_FINISHED_EVENT.equals(event.getTopic())) {
                     logError("TestRail Integration: Failed to upload results to TestRail. " + e.getMessage(), e);
+                } else {
+                    // This listener receives every Studio event, so other failures stay out of the Error Log
+                    e.printStackTrace(System.out);
                 }
             }
         });
@@ -410,7 +413,7 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
             } catch (Exception e) {
                 int statusCode = e instanceof APIException ? ((APIException) e).getStatusCode() : 0;
                 // TestRail answers 400 for a case ID that does not exist
-                boolean notFound = statusCode == 400 || statusCode == 404;
+                boolean notFound = statusCode == 400;
                 if (notFound || (dropUnreadable && statusCode > 0)) {
                     validation.invalidIds.add(caseId);
                 } else {
