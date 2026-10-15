@@ -48,6 +48,10 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
 
     private Label lblConnectionStatus;
 
+    private Group grpTestRun;
+
+    private Button chckAddMissingCasesToRun;
+
     private Thread thread;
 
     private TestRailPropertyMapComposite propertyMapComposite;
@@ -106,6 +110,20 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
         lblConnectionStatus = new Label(grpAuthentication, SWT.WRAP);
         lblConnectionStatus.setText("");
         lblConnectionStatus.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, true, 1, 1));
+
+        grpTestRun = new Group(container, SWT.NONE);
+        grpTestRun.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        GridLayout glTestRun = new GridLayout(1, false);
+        glTestRun.verticalSpacing = 5;
+        grpTestRun.setLayout(glTestRun);
+        grpTestRun.setText("Test Run");
+
+        chckAddMissingCasesToRun = new Button(grpTestRun, SWT.CHECK);
+        chckAddMissingCasesToRun.setText("Add test cases that are not in the existing test run");
+
+        Label lblAddMissingCasesHint = new Label(grpTestRun, SWT.WRAP);
+        lblAddMissingCasesHint.setText("(When unchecked, results of test cases that are not in the run are skipped)");
+        lblAddMissingCasesHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
         propertyMapComposite = new TestRailPropertyMapComposite(container);
 
@@ -186,6 +204,7 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             public void widgetSelected(SelectionEvent e) {
                 boolean enabled = chckEnableIntegration.getSelection();
                 recursiveSetEnabled(grpAuthentication, enabled);
+                recursiveSetEnabled(grpTestRun, enabled);
                 recursiveSetEnabled(propertyMapComposite, enabled);
             }
         });
@@ -223,6 +242,8 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
                 e.printStackTrace();
             }
             pluginStore.setBoolean(TestRailConstants.IS_ENCRYPTION_MIGRATED, true);
+            pluginStore.setBoolean(TestRailConstants.PREF_TESTRAIL_ADD_MISSING_CASES_TO_RUN,
+                    chckAddMissingCasesToRun.getSelection());
 
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS,
                     JSONObject.toJSONString(propertyMapComposite.getPropertyMap()));
@@ -256,6 +277,8 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
                 // Cannot decrypt the password
                 e.printStackTrace();
             }
+            chckAddMissingCasesToRun.setSelection(
+                    pluginStore.getBoolean(TestRailConstants.PREF_TESTRAIL_ADD_MISSING_CASES_TO_RUN, true));
 
             propertyMapComposite.setInput(loadPropertyMap(pluginStore));
 

@@ -265,10 +265,24 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     }
 
                     int totalCasesBeforeValidation = updateIds.size();
+                    boolean addMissingCasesToRun = preferences
+                            .getBoolean(TestRailConstants.PREF_TESTRAIL_ADD_MISSING_CASES_TO_RUN, true);
+                    RunMembership runMembership;
+                    try {
+                        runMembership = skipCasesNotInRun(connector, name, runIncludesAllCases, addMissingCasesToRun,
+                                updateIds, data);
+                    } catch (Exception e) {
+                        logError("TestRail Integration: Aborting upload. " + e.getMessage(), e);
+                        return;
+                    }
+
                     List<Long> invalidIds = new ArrayList<>();
                     // Case IDs not confirmed valid, re-checked only if TestRail rejects the upload
                     Set<Long> unverifiedIds = new LinkedHashSet<>(updateIds);
-                    if (suiteId != null) {
+                    if (runMembership != null) {
+                        // Every remaining case is in the run, which replaces suite validation
+                        unverifiedIds.clear();
+                    } else if (suiteId != null) {
                         try {
                             CaseValidation validation = validateCaseIds(connector, projectId, suiteId, updateIds);
                             invalidIds.addAll(validation.invalidIds);
@@ -281,7 +295,8 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     }
 
                     if (updateIds.isEmpty()) {
-                        logValidationResults(totalCasesBeforeValidation, 0, invalidIds, caseIdToPathMap, invalidFormatIds);
+                        logValidationResults(totalCasesBeforeValidation, 0, invalidIds, caseIdToPathMap,
+                                invalidFormatIds, runMembership);
                         return;
                     }
 
@@ -299,14 +314,24 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                                 }
                             }
 
-                            if (!Boolean.TRUE.equals(runIncludesAllCases)) {
+                            if (runMembership == null && !Boolean.TRUE.equals(runIncludesAllCases)) {
                                 List<Long> testCaseIdInRun = connector.getTestCaseIdInRun(testRunId);
-                                if (!testCaseIdInRun.containsAll(updateIds)) {
-                                    testCaseIdInRun.addAll(updateIds);
+                                Set<Long> caseIdsInRun = new HashSet<>(testCaseIdInRun);
+                                List<Long> missingIds = updateIds.stream()
+                                        .filter(caseId -> !caseIdsInRun.contains(caseId))
+                                        .distinct()
+                                        .collect(Collectors.toList());
+                                if (!missingIds.isEmpty()) {
+                                    testCaseIdInRun.addAll(missingIds);
                                     Map<String, Object> body = new HashMap<>();
                                     body.put("include_all", false);
                                     body.put("case_ids", testCaseIdInRun);
                                     connector.updateRun(testRunId, body);
+                                    logError("TestRail Integration: Added " + missingIds.size()
+                                            + " test case(s) to run R" + testRunId + " ("
+                                            + missingIds.stream().map(caseId -> "C" + caseId)
+                                                    .collect(Collectors.joining(", "))
+                                            + ")", null);
                                 }
                             }
                             Map<String, Object> requestBody = new HashMap<>();
@@ -335,7 +360,8 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                             }
                         }
                     }
-                    logValidationResults(totalCasesBeforeValidation, updateIds.size(), invalidIds, caseIdToPathMap, invalidFormatIds);
+                    logValidationResults(totalCasesBeforeValidation, updateIds.size(), invalidIds, caseIdToPathMap,
+                            invalidFormatIds, runMembership);
                 }
             } catch (Exception e) {
                 if (ExecutionEvent.TEST_SUITE_FINISHED_EVENT.equals(event.getTopic())) {
@@ -352,6 +378,47 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
         private final List<Long> invalidIds = new ArrayList<>();
 
         private final List<Long> unverifiedIds = new ArrayList<>();
+    }
+
+    private static final class RunMembership {
+        private final String runId;
+
+        private final List<Long> skippedIds = new ArrayList<>();
+
+        private RunMembership(String runId) {
+            this.runId = runId;
+        }
+    }
+
+    /*
+     * Keeps only the results of cases that are already in run R<id> when adding missing cases is turned off.
+     * Returns null when the run is not filtered because the setting is on, the suite is not R<id> or the run
+     * includes all cases.
+     *
+     * @throws Exception when the cases in the run cannot be read, so nothing is uploaded or added to the run
+     */
+    private RunMembership skipCasesNotInRun(TestRailConnector connector, String suiteName,
+            Boolean runIncludesAllCases, boolean addMissingCasesToRun, List<Long> updateIds,
+            List<Map<String, Object>> data) throws Exception {
+        Matcher updateMatcher = updatePattern.matcher(suiteName);
+        if (addMissingCasesToRun || !updateMatcher.lookingAt() || Boolean.TRUE.equals(runIncludesAllCases)) {
+            return null;
+        }
+        RunMembership runMembership = new RunMembership(updateMatcher.group(1));
+        Set<Long> caseIdsInRun;
+        try {
+            caseIdsInRun = new HashSet<>(connector.getTestCaseIdInRun(runMembership.runId));
+        } catch (Exception e) {
+            throw new Exception("Could not get the test cases in run R" + runMembership.runId + ". "
+                    + e.getMessage(), e);
+        }
+        for (Long caseId : new LinkedHashSet<>(updateIds)) {
+            if (!caseIdsInRun.contains(caseId)) {
+                runMembership.skippedIds.add(caseId);
+            }
+        }
+        removeCaseIds(runMembership.skippedIds, updateIds, data);
+        return runMembership;
     }
 
     /*
@@ -590,16 +657,25 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
 
     private void logValidationResults(int totalCases, int validCases, List<Long> invalidIds,
             Map<Long, String> caseIdToPathMap, Map<String, String> invalidFormatIds) {
+        logValidationResults(totalCases, validCases, invalidIds, caseIdToPathMap, invalidFormatIds, null);
+    }
+
+    /*
+     * @param runMembership the cases skipped because they are not in run R<id>, or null when the run is not filtered
+     */
+    private void logValidationResults(int totalCases, int validCases, List<Long> invalidIds,
+            Map<Long, String> caseIdToPathMap, Map<String, String> invalidFormatIds, RunMembership runMembership) {
 
         ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
         int totalWithFormatInvalid = totalCases + invalidFormatIds.size();
         boolean hasInvalidIds = !invalidIds.isEmpty() || !invalidFormatIds.isEmpty();
+        boolean hasSkippedIds = runMembership != null && !runMembership.skippedIds.isEmpty();
 
-        if (!hasInvalidIds) {
+        if (!hasInvalidIds && !hasSkippedIds) {
             // All valid - log success
             String message = "\u2713 TestRail Integration: " + validCases + " of " + totalWithFormatInvalid + " results uploaded successfully";
             log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, message));
-        } else if (validCases == 0) {
+        } else if (validCases == 0 && !hasSkippedIds) {
             // Edge case: All invalid
             StringBuilder message = new StringBuilder();
             message.append("\u26a0 TestRail Integration: No results uploaded\n");
@@ -616,23 +692,44 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
             message.append("\u2192 Action needed: Verify case IDs match your TestRail test suite");
             log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, message.toString()));
         } else {
-            // Partial success
-            String successMessage = "\u2713 TestRail Integration: " + validCases + " of " + totalWithFormatInvalid + " results uploaded successfully";
-            log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, successMessage));
-
-            StringBuilder warning = new StringBuilder();
-            warning.append("\u26a0 Skipped test cases with invalid TestRail mappings:\n");
-
-            for (Long invalidId : invalidIds) {
-                String testCasePath = caseIdToPathMap.getOrDefault(invalidId, "Unknown");
-                warning.append("  \u2022 ").append(testCasePath).append(" \u2192 TestRail Case ID: C").append(invalidId).append("\n");
-            }
-            for (Map.Entry<String, String> entry : invalidFormatIds.entrySet()) {
-                warning.append("  \u2022 ").append(entry.getValue()).append(" \u2192 invalid case ID: ").append(entry.getKey()).append("\n");
+            // Partial success, or results skipped because their cases are not in the run
+            if (validCases == 0) {
+                log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID,
+                        "\u26a0 TestRail Integration: No results uploaded"));
+            } else {
+                String successMessage = "\u2713 TestRail Integration: " + validCases + " of " + totalWithFormatInvalid + " results uploaded successfully";
+                log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, successMessage));
             }
 
-            warning.append("\u2192 Action needed: Verify these case IDs exist in the configured TestRail test suite");
-            log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, warning.toString()));
+            if (hasInvalidIds) {
+                StringBuilder warning = new StringBuilder();
+                warning.append("\u26a0 Skipped test cases with invalid TestRail mappings:\n");
+
+                for (Long invalidId : invalidIds) {
+                    String testCasePath = caseIdToPathMap.getOrDefault(invalidId, "Unknown");
+                    warning.append("  \u2022 ").append(testCasePath).append(" \u2192 TestRail Case ID: C").append(invalidId).append("\n");
+                }
+                for (Map.Entry<String, String> entry : invalidFormatIds.entrySet()) {
+                    warning.append("  \u2022 ").append(entry.getValue()).append(" \u2192 invalid case ID: ").append(entry.getKey()).append("\n");
+                }
+
+                warning.append("\u2192 Action needed: Verify these case IDs exist in the configured TestRail test suite");
+                log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, warning.toString()));
+            }
+
+            if (hasSkippedIds) {
+                String runName = "R" + runMembership.runId;
+                StringBuilder skipped = new StringBuilder();
+                skipped.append("\u26a0 Skipped test cases that are not in test run ").append(runName).append("\n");
+                for (Long skippedId : runMembership.skippedIds) {
+                    String testCasePath = caseIdToPathMap.getOrDefault(skippedId, "Unknown");
+                    skipped.append("  \u2022 ").append(testCasePath).append(" \u2192 TestRail Case ID: C").append(skippedId).append("\n");
+                }
+                skipped.append("\u2192 Add these cases to run ").append(runName)
+                        .append(" in TestRail, or check \"Add test cases that are not in the existing test run\"")
+                        .append(" in Project Settings \u2192 TestRail.");
+                log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, skipped.toString()));
+            }
         }
     }
 }
