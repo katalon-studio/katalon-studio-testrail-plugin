@@ -19,6 +19,8 @@ public interface TestRailConstants {
 
     String PREF_TESTRAIL_ADD_MISSING_CASES_TO_RUN = "testRail.addMissingCasesToRun";
 
+    String PREF_TESTRAIL_ATTACH_REPORT_TO_RUN = "testRail.attachReportToRun";
+
     String INTEGRATION_ID = "com.katalon.plugin.testrail.TestRailIntegration";
 
     String INTEGRATION_TESTCASE_ID = "testRail.testcase.id";
