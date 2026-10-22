@@ -1,5 +1,6 @@
 package com.katalon.plugin.testrail;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.security.GeneralSecurityException;
@@ -136,6 +137,15 @@ public class TestRailConnector {
             throws IOException, URISyntaxException, GeneralSecurityException, APIException {
         String add_result_url = String.format("add_results_for_cases/%s", testRunId);
         return (JSONArray) sendPost(add_result_url, body);
+    }
+
+    public JSONObject addAttachmentToRun(String testRunId, File file, String fileName)
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
+        String url = "add_attachment_to_run/" + testRunId;
+        System.out.println("Send file url: " + url + " file: " + fileName + " (" + file.length() + " bytes)");
+        Object response = this.apiClient.sendFile(url, file, fileName);
+        System.out.println("Receive: " + response.toString());
+        return (JSONObject) response;
     }
 
     public JSONObject addRun(String projectId, String suiteId, String name, List<Long> testCaseIds)

@@ -1,11 +1,13 @@
 package com.katalon.plugin.testrail;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -37,6 +39,8 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
     private static final String TESTRAIL_TESTCASE_DELIMITER = ",";
     private static final int PER_CASE_VALIDATION_LIMIT = 50;
     private static final int BULK_VALIDATION_LIMIT = 500;
+    private static final long MAX_ATTACHMENT_BYTES = 256L * 1024 * 1024;
+    private static final int MAX_LISTED_SKIPPED_FILES = 5;
     private Pattern updatePattern = Pattern.compile("^R(\\d+)");
     private Pattern createPattern = Pattern.compile("^S(\\d+)");
 
@@ -362,6 +366,9 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
                     }
                     logValidationResults(totalCasesBeforeValidation, updateIds.size(), invalidIds, caseIdToPathMap,
                             invalidFormatIds, runMembership);
+                    if (preferences.getBoolean(TestRailConstants.PREF_TESTRAIL_ATTACH_REPORT_TO_RUN, false)) {
+                        attachReportToRun(connector, testRunId, testSuiteContext.getReportLocation());
+                    }
                 }
             } catch (Exception e) {
                 if (ExecutionEvent.TEST_SUITE_FINISHED_EVENT.equals(event.getTopic())) {
@@ -516,6 +523,61 @@ public class TestRailEventListenerInitializer implements EventListenerInitialize
     private static void logError(String message, Throwable e) {
         ILog log = Platform.getLog(Platform.getBundle(TestRailConstants.PLUGIN_ID));
         log.log(new Status(Status.ERROR, TestRailConstants.PLUGIN_ID, message, e));
+    }
+
+    /*
+     * Runs after the results are uploaded. A failure here is logged on its own, so it never reads as a failed
+     * result upload.
+     */
+    private static void attachReportToRun(TestRailConnector connector, String testRunId, String reportLocation) {
+        String runName = "R" + testRunId;
+        File reportFolder = StringUtils.isBlank(reportLocation) ? null : new File(reportLocation);
+        if (reportFolder == null || !reportFolder.isDirectory()) {
+            logError("TestRail Integration: Could not attach the test report to run " + runName
+                    + ". The report folder was not found: " + reportLocation, null);
+            return;
+        }
+        String attachmentName = ReportArchiver.attachmentName(reportFolder);
+        ReportArchiver.Archive archive = null;
+        try {
+            archive = ReportArchiver.zip(reportFolder, MAX_ATTACHMENT_BYTES);
+            // The central directory written on close can still push a zip just under the limit over it
+            if (archive.isOverLimit() || archive.zip.length() > MAX_ATTACHMENT_BYTES) {
+                logError("TestRail Integration: Did not attach the test report " + attachmentName + " to run "
+                        + runName + ". It is larger than TestRail's 256 MB limit.", null);
+                return;
+            }
+            connector.addAttachmentToRun(testRunId, archive.zip, attachmentName);
+            logError("TestRail Integration: Attached the test report " + attachmentName + " ("
+                    + formatSize(archive.zip.length()) + ") to run " + runName
+                    + describeSkippedFiles(archive.skippedFiles), null);
+        } catch (Exception e) {
+            logError("TestRail Integration: Could not attach the test report to run " + runName + ". "
+                    + StringUtils.defaultIfBlank(e.getMessage(), e.getClass().getName()), e);
+        } finally {
+            if (archive != null && archive.zip != null) {
+                archive.zip.delete();
+            }
+        }
+    }
+
+    private static String describeSkippedFiles(List<String> skippedFiles) {
+        if (skippedFiles.isEmpty()) {
+            return "";
+        }
+        int shown = Math.min(skippedFiles.size(), MAX_LISTED_SKIPPED_FILES);
+        String names = String.join(", ", skippedFiles.subList(0, shown));
+        if (skippedFiles.size() > shown) {
+            names += " and " + (skippedFiles.size() - shown) + " more";
+        }
+        return ". " + skippedFiles.size() + " file(s) could not be read and were left out (" + names + ")";
+    }
+
+    private static String formatSize(long bytes) {
+        if (bytes < 1024 * 1024) {
+            return Math.max(1, Math.round(bytes / 1024.0)) + " KB";
+        }
+        return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024));
     }
 
     /*

@@ -52,6 +52,8 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
 
     private Button chckAddMissingCasesToRun;
 
+    private Button chckAttachReportToRun;
+
     private Thread thread;
 
     private TestRailPropertyMapComposite propertyMapComposite;
@@ -124,6 +126,9 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
         Label lblAddMissingCasesHint = new Label(grpTestRun, SWT.WRAP);
         lblAddMissingCasesHint.setText("(When unchecked, results of test cases that are not in the run are skipped)");
         lblAddMissingCasesHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+
+        chckAttachReportToRun = new Button(grpTestRun, SWT.CHECK);
+        chckAttachReportToRun.setText("Attach the test report to the TestRail run");
 
         propertyMapComposite = new TestRailPropertyMapComposite(container);
 
@@ -244,6 +249,8 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             pluginStore.setBoolean(TestRailConstants.IS_ENCRYPTION_MIGRATED, true);
             pluginStore.setBoolean(TestRailConstants.PREF_TESTRAIL_ADD_MISSING_CASES_TO_RUN,
                     chckAddMissingCasesToRun.getSelection());
+            pluginStore.setBoolean(TestRailConstants.PREF_TESTRAIL_ATTACH_REPORT_TO_RUN,
+                    chckAttachReportToRun.getSelection());
 
             pluginStore.setString(TestRailConstants.PREF_TESTRAIL_CUSTOM_FIELD_MAPPINGS,
                     JSONObject.toJSONString(propertyMapComposite.getPropertyMap()));
@@ -279,6 +286,8 @@ public class TestRailPreferencePage extends PreferencePage implements TestRailCo
             }
             chckAddMissingCasesToRun.setSelection(
                     pluginStore.getBoolean(TestRailConstants.PREF_TESTRAIL_ADD_MISSING_CASES_TO_RUN, true));
+            chckAttachReportToRun.setSelection(
+                    pluginStore.getBoolean(TestRailConstants.PREF_TESTRAIL_ATTACH_REPORT_TO_RUN, false));
 
             propertyMapComposite.setInput(loadPropertyMap(pluginStore));
 

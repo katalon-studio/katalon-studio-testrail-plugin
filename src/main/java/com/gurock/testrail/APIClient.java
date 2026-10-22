@@ -13,6 +13,7 @@ package com.gurock.testrail;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -24,6 +25,7 @@ import java.util.Base64;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.Header;
+import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.StatusLine;
@@ -32,6 +34,8 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.methods.RequestBuilder;
 import org.apache.http.entity.ByteArrayEntity;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.util.EntityUtils;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
@@ -139,6 +143,19 @@ public class APIClient {
         return this.sendRequest("POST", uri, data);
     }
 
+    /**
+     * Uploads a file as the "attachment" form field, as the add_attachment_to_* methods expect
+     * (e.g. add_attachment_to_run/1). The file is sent under fileName.
+     */
+    public Object sendFile(String uri, File file, String fileName)
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
+        HttpEntity entity = MultipartEntityBuilder.create()
+                .addBinaryBody("attachment", file, ContentType.DEFAULT_BINARY, fileName)
+                .build();
+        RequestBuilder requestBuilder = RequestBuilder.post(this.m_url + uri).setEntity(entity);
+        return execute(requestBuilder, entity.getContentType().getValue());
+    }
+
     private Object sendRequest(String method, String uri, Object data)
             throws IOException, URISyntaxException, GeneralSecurityException, APIException {
         String absoluteUri = this.m_url + uri;
@@ -158,11 +175,16 @@ public class APIClient {
             requestBuilder.setEntity(entity);
         }
 
+        return execute(requestBuilder, "application/json");
+    }
+
+    private Object execute(RequestBuilder requestBuilder, String contentType)
+            throws IOException, URISyntaxException, GeneralSecurityException, APIException {
         RequestController requestController = ApplicationManager.getInstance()
                 .getControllerManager()
                 .getController(RequestController.class);
 
-        HttpResponse response = requestController.sendWithProxy(buildRequest(requestBuilder));
+        HttpResponse response = requestController.sendWithProxy(buildRequest(requestBuilder, contentType));
         // TestRail Cloud rate-limits API calls, so wait as told by Retry-After instead of failing the whole upload
         for (int retry = 0; retry < MAX_RATE_LIMIT_RETRIES
                 && response.getStatusLine().getStatusCode() == HTTP_TOO_MANY_REQUESTS; retry++) {
@@ -170,7 +192,7 @@ public class APIClient {
             if (!waitForRetry(response)) {
                 break;
             }
-            response = requestController.sendWithProxy(buildRequest(requestBuilder));
+            response = requestController.sendWithProxy(buildRequest(requestBuilder, contentType));
         }
 
         StatusLine statusLine = response.getStatusLine();
@@ -222,10 +244,10 @@ public class APIClient {
         return result;
     }
 
-    private HttpUriRequest buildRequest(RequestBuilder requestBuilder) {
+    private HttpUriRequest buildRequest(RequestBuilder requestBuilder, String contentType) {
         HttpUriRequest request = requestBuilder.build();
 
-        request.setHeader("Content-Type", "application/json");
+        request.setHeader("Content-Type", contentType);
 
         String basicAuth = getAuthorization(this.m_user, this.m_password);
         request.setHeader("Authorization", "Basic " + basicAuth);
